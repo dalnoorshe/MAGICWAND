@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magicwand"
+version = "0.1.0"
+description = "MAGICWAND — a paper-trading bot that refuses to lie about itself"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []          # zero dependencies, by design
+
+[project.scripts]
+wand = "magicwand.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["magicwand*"]

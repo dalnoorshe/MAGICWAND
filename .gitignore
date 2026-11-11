@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Runtime artifacts — cached candles, paper state, ledger, demo runs
+data/*.json
+data/*.jsonl
+data/state.json
+!data/.gitkeep
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

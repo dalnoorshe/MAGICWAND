@@ -398,6 +398,34 @@ If you ever see an identical verdict repeated by all four readers, that is the
 telltale: a real model gives four different readings. Connect a key and each
 reader gets its own prompt and its own opinion.
 
+### What keys do I need? One.
+
+```bash
+python3 wand.py keys            # generated from the code, always current
+```
+
+| Integration | Key? | What it powers |
+|---|---|---|
+| **DeepSeek** — the AI | **the only one needed** | the four readers, chart vision, strategy proposals |
+| Coinbase Exchange | none | the candles your strategy trades |
+| Binance Futures | none | funding, positioning, open interest, taker pressure |
+| Kraken | none | fallback candles |
+| Crypto news RSS (4 feeds) | none | headlines for the news reader |
+| Reddit | none | post volume + titles (rate-limited; often DEGRADED) |
+| On-chain proxies | none | mempool, stablecoin supply, market-cap flows |
+| Whale Alert / Glassnode | not wired | would replace the on-chain proxies with real netflow |
+| Longer history | not wired | would let backtests span years, not ~12 days |
+| **Broker / exchange** | **none — do not connect one** | nothing; there is no live order path in this build |
+
+So: **one key, for the AI.** Everything else is public data that needs no
+account, and the broker slot is deliberately empty.
+
+The DeepSeek key needs **no special permissions** — it is a plain inference
+API, not an exchange login. No scopes, no IP allow-list, no withdrawal rights
+to worry about. If live trading is ever added, the rule is already written in
+`docs/SAFETY.md`: trade-only key, never withdrawal, IP allow-listed, and gated
+behind a human tier change.
+
 ### Connecting the APIs (in the UI)
 
 | API | How | Why |

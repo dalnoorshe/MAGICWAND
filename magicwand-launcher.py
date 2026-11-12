@@ -90,7 +90,8 @@ def preflight() -> bool:
                   f"from {pub['key_source']}) — live agents + vision"))
     else:
         print(_warn("no DeepSeek key yet — the console will offer to connect one"))
-        print(f"    {DIM}you can also: export DEEPSEEK_API_KEY=sk-...{OFF}")
+        print(f"    {DIM}what you need: python3 wand.py keys{OFF}")
+        print(f"    {DIM}or: export DEEPSEEK_API_KEY=sk-...{OFF}")
 
     # Backup health belongs in the preflight: it is the only thing here that
     # cannot be regenerated.

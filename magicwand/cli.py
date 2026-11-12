@@ -25,6 +25,7 @@ from . import propose as propose_mod
 from . import research_loop
 from . import runner
 from .config import Config
+from . import integrations as integrations_mod
 from . import service as service_mod
 from . import storage as storage_mod
 from .dashboard import serve as serve_dashboard
@@ -384,6 +385,46 @@ def cmd_storage(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_keys(cfg: Config, args) -> int:
+    """What do I need to connect? Answered from the code, not from memory."""
+    items = integrations_mod.collect(".")
+    marks = {"connected": "CONNECTED", "absent": "NOT SET", "public": "no key",
+             "unsupported": "not wired", "not-applicable": "n/a",
+             "unknown": "?"}
+    print()
+    print("  MAGICWAND INTEGRATIONS")
+    print("  " + "-" * 74)
+    for it in items:
+        req = integrations_mod.REQUIREMENT_LABEL.get(it.requirement, it.requirement)
+        status = marks.get(it.status, it.status)
+        flag = "  " if it.requirement in ("none", "missing") else (
+            "!!" if it.status != "connected" else "ok")
+        print(f"  {flag} {it.name}")
+        print(f"      need: {req:14s} state: {status:11s} {it.detail}")
+        print(f"      does: {it.what_it_powers}")
+        if it.where_to_get:
+            print(f"      get:  {it.where_to_get}")
+        if it.cost:
+            print(f"      cost: {it.cost}")
+        if it.notes and args.verbose:
+            print(f"      note: {it.notes}")
+        print()
+    need = integrations_mod.missing_required(".")
+    if need:
+        print(f"  {len(need)} thing(s) needed and not connected:")
+        for it in need:
+            print(f"    - {it.name}: {it.where_to_get}")
+        print()
+        print("  Connect it in the console: Settings -> paste key -> Save -> Test connection")
+    else:
+        print("  Everything required is connected. Real agents and vision are live.")
+    print()
+    if not args.verbose:
+        print("  (run with --verbose for permission and privacy notes)")
+        print()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="wand", description="MAGICWAND paper trading bot")
     p.add_argument("--config", help="path to a JSON config")
@@ -432,6 +473,10 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--max-calls", type=int, default=400)
     rs.add_argument("--max-cost", type=float, default=2.0)
     rs.set_defaults(fn=cmd_research)
+
+    k = sub.add_parser("keys", help="what API keys are needed, and what is connected")
+    k.add_argument("--verbose", action="store_true")
+    k.set_defaults(fn=cmd_keys)
 
     dk = sub.add_parser("desk", help="show the agent desk sandbox state")
     dk.set_defaults(fn=cmd_desk)

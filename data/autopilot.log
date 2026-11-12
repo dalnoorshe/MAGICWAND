@@ -61,3 +61,6 @@
 [autopilot 13:57:28] tick 8: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_22' refused: near-duplicate of offline_me
 [autopilot 14:02:38] tick 9: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_23' refused: near-duplicate of offline_me
 [autopilot 14:07:51] tick 10: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | strategy 'offline_mean_revert_24' rejected: REJECTED: not profitabl
+[autopilot 14:13:02] tick 11: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:18:13] tick 12: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:23:30] tick 13: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte

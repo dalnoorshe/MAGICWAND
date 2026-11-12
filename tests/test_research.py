@@ -637,3 +637,64 @@ class TestStubMode(unittest.TestCase):
         verdicts = run_all(snap, DeepSeekClient(fake=sure, stub_mode=False))
         rep = synthesize(verdicts, "SOL-USD", snap.ts)
         self.assertTrue(rep.is_veto)
+
+
+class TestModeSwitching(unittest.TestCase):
+    """Connecting a key mid-session must take effect immediately.
+
+    Regression: the server captured 'offline' at startup, so `use_fake` stayed
+    True forever and the console kept using the stand-in model — with no
+    terminal output — even after a valid key was saved.
+    """
+
+    def test_mode_is_stub_without_a_key(self):
+        from magicwand.dashboard import resolve_mode
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(resolve_mode(Path(d)), "stub")
+
+    def test_mode_becomes_live_once_a_key_is_saved(self):
+        from magicwand.dashboard import resolve_mode
+        from magicwand.settings_store import SettingsStore
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(resolve_mode(Path(d)), "stub")
+            SettingsStore(Path(d) / "data" / "settings.json").set_key(
+                "sk-abcdef1234567890abcdef1234567890")
+            self.assertEqual(resolve_mode(Path(d)), "live")
+
+    def test_forced_offline_wins_over_a_key(self):
+        from magicwand.dashboard import resolve_mode
+        from magicwand.settings_store import SettingsStore
+        with tempfile.TemporaryDirectory() as d:
+            SettingsStore(Path(d) / "data" / "settings.json").set_key(
+                "sk-abcdef1234567890abcdef1234567890")
+            self.assertEqual(resolve_mode(Path(d), force_offline=True), "stub")
+
+    def test_tick_uses_live_model_when_key_exists(self):
+        """A tick must build a real (non-fake) client once a key is present."""
+        from magicwand.dashboard import _tick_with_client
+        from magicwand.config import Config
+        from magicwand.settings_store import SettingsStore
+        import unittest.mock as mock
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            SettingsStore(root / "data" / "settings.json").set_key(
+                "sk-abcdef1234567890abcdef1234567890")
+            cfg = Config()
+            cfg.market.exchange = "synthetic"
+            cfg.market.candles = 300
+            captured = {}
+
+            def fake_tick(cfg_, client, dcfg, **kw):
+                captured["fake"] = client.fake
+                captured["available"] = client.available()
+                from magicwand.runner import TickReport
+                return TickReport(ts="t", symbol="SOL-USD")
+
+            with mock.patch("magicwand.runner.tick", side_effect=fake_tick):
+                try:
+                    _tick_with_client(root, cfg)
+                except Exception:
+                    pass
+            self.assertIsNone(captured.get("fake"),
+                              "a real key must not select the offline stand-in")
+            self.assertTrue(captured.get("available"))

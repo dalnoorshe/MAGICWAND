@@ -93,7 +93,7 @@ def _recent(ledger: Ledger, limit: int = 60) -> list[dict]:
     return list(reversed(out))
 
 
-def build_state(root: Path, cfg: Config) -> dict:
+def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
     data = root / "data"
     ledger = Ledger(root / cfg.ledger.path)
     ok, msg = ledger.verify()
@@ -181,7 +181,7 @@ def build_state(root: Path, cfg: Config) -> dict:
         "models": load_models_cache(root),
         "backups": (get_backups(root, cfg).status()
                     if (root / "data").exists() else {}),
-        "model_mode": ("live" if resolve_key(root) and not service.get("offline")
+        "model_mode": ("live" if resolve_mode(root, force_offline) == "live"
                        else "offline"),
     }
 
@@ -253,7 +253,20 @@ class _Lock:
         return False
 
 
-def _tick_with_client(root: Path, cfg: Config, offline: bool = True,
+def resolve_mode(root: Path, force_offline: bool = False) -> str:
+    """'live' if a key is available, 'stub' otherwise.
+
+    Evaluated per call, never cached at startup. A key connected through the
+    console during a session must take effect immediately — the first version
+    captured `offline` when the server booted, so connecting afterwards did
+    nothing and the console silently kept using the stand-in model.
+    """
+    if force_offline:
+        return "stub"
+    return "live" if resolve_key(root) else "stub"
+
+
+def _tick_with_client(root: Path, cfg: Config, offline: Optional[bool] = None,
                       tier: Optional[RiskTier] = None) -> dict:
     """Run one tick and return its report dict. Caller must hold the tick lock."""
     from .desk import DeskConfig
@@ -262,7 +275,8 @@ def _tick_with_client(root: Path, cfg: Config, offline: bool = True,
 
     st = SettingsStore(root / "data" / "settings.json")
     settings = st.load()
-    use_fake = offline or not resolve_key(root)
+    # None => decide from the key right now. True => explicitly forced offline.
+    use_fake = resolve_mode(root, force_offline=bool(offline)) == "stub"
     client = DeepSeekClient(
         model=settings.model,
         fake=(fake_canned if use_fake else None),
@@ -285,7 +299,7 @@ def _tick_with_client(root: Path, cfg: Config, offline: bool = True,
     return rep.to_dict()
 
 
-def run_tick(root: Path, cfg: Config, offline: bool = True,
+def run_tick(root: Path, cfg: Config, offline: Optional[bool] = None,
              tier: Optional[RiskTier] = None,
              by: str = "human") -> dict:
     """One tick, triggered by a human (the dashboard button)."""
@@ -354,6 +368,50 @@ class Handler(BaseHTTPRequestHandler):
         st = SettingsStore(self.root / "data" / "settings.json")
         self._json(st.public_dict())
 
+    def _mark_live(self, cur) -> None:
+        """Update service.json and the terminal so the change is visible.
+
+        Saving a key used to be completely silent: the terminal said nothing and
+        the console kept showing old offline verdicts until a tick happened to
+        run. That reads as 'it did not work'.
+        """
+        mode = resolve_mode(self.root, force_offline=bool(self.offline))
+        try:
+            p = self.root / "data" / "service.json"
+            d = json.loads(p.read_text()) if p.exists() else {}
+            d["mode"] = "live" if mode == "live" else "offline"
+            d["mode_changed_at"] = iso(utcnow())
+            p.write_text(json.dumps(d, indent=2))
+        except (OSError, json.JSONDecodeError):
+            pass
+        print(f"[settings {utcnow():%H:%M:%S}] key connected ({cur.masked_key()}), "
+              f"model {cur.model} — mode is now {mode.upper()}", flush=True)
+        if mode != "live":
+            print(f"[settings {utcnow():%H:%M:%S}] still in offline stub mode "
+                  f"(forced offline)", flush=True)
+
+    def _kick_first_cycle(self) -> bool:
+        """Run one research cycle in the background so the console fills in.
+
+        Without this, connecting a key produces no visible change until the
+        autopilot happens to tick — which, if it is idle, is never.
+        """
+        if resolve_mode(self.root, force_offline=bool(self.offline)) != "live":
+            return False
+
+        def run() -> None:
+            try:
+                out = run_tick(self.root, self.cfg, by="after-key-save")
+                ok = out.get("ok")
+                print(f"[settings {utcnow():%H:%M:%S}] first live cycle: "
+                      f"{'done' if ok else out.get('error')}", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"[settings {utcnow():%H:%M:%S}] first live cycle failed: {e}",
+                      flush=True)
+
+        threading.Thread(target=run, name="first-live-cycle", daemon=True).start()
+        return True
+
     def _settings_post(self) -> None:
         """Save or clear the API key. This is the only way a key enters the app
         without an environment variable, and it is a human action."""
@@ -402,7 +460,10 @@ class Handler(BaseHTTPRequestHandler):
             get_backups(self.root, self.cfg).run_now(by="after-key-save")
         except Exception:  # noqa: BLE001 - a failed backup must not fail the save
             pass
-        self._json({"ok": True, "settings": st.public_dict()})
+        self._mark_live(cur)
+        self._json({"ok": True, "settings": st.public_dict(),
+                    "mode": resolve_mode(self.root, force_offline=bool(self.offline)),
+                    "first_cycle": self._kick_first_cycle()})
 
     def _model_is_known(self, root: Path, model: str) -> bool:
         """Only allow models the API actually reported (or the built-in default)."""
@@ -475,7 +536,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             self._html(_load_page())
         elif path == "/api/state":
-            self._json(build_state(self.root, self.cfg))
+            self._json(build_state(self.root, self.cfg,
+                                   force_offline=bool(self.offline)))
         elif path == "/api/settings":
             self._settings_get()
         elif path == "/api/chart":
@@ -498,9 +560,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json(storage_report(self.root))
         elif path == "/api/health":
             import os
+            mode = resolve_mode(self.root, force_offline=bool(self.offline))
             self._json({"ok": True, "app": "magicwand", "time": iso(utcnow()),
-                        "has_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
-                        "offline": self.offline})
+                        "has_key": bool(resolve_key(self.root)),
+                        "mode": mode,
+                        "offline": mode == "stub"})
         else:
             self._json({"error": "not found"}, 404)
 
@@ -604,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
-          cfg: Optional[Config] = None, offline: bool = True,
+          cfg: Optional[Config] = None, offline: bool = False,
           autostart: bool = False, interval: int = 900) -> int:
     Handler.root = Path(root).resolve()
     Handler.cfg = cfg or Config()
@@ -632,7 +696,8 @@ def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
             print(f"  housekeeping: pruned old snapshots, freed {freed} KB")
     except Exception as e:  # noqa: BLE001 - housekeeping must never block startup
         print(f"  housekeeping skipped: {type(e).__name__}: {e}")
-    print(f"  mode    {'offline (fake model)' if offline else 'live DeepSeek'}")
+    _m = resolve_mode(Handler.root, force_offline=bool(offline))
+    print(f"  mode    {'offline stub (forced)' if _m == 'stub' else 'live DeepSeek'}")
     # Automatic backups: start the clock regardless of the autopilot, because
     # the ledger is written even by a single manual tick.
     try:

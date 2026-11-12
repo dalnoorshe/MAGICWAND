@@ -329,7 +329,7 @@ def cmd_strategies(cfg: Config, args) -> int:
 
 def cmd_serve(cfg: Config, args) -> int:
     return serve_dashboard(root=".", host=args.host, port=args.port,
-                           cfg=cfg, offline=not args.live,
+                           cfg=cfg, offline=args.offline,
                            autostart=args.auto, interval=args.interval)
 
 
@@ -525,7 +525,9 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--live", action="store_true",
-                    help="call the real DeepSeek API (needs DEEPSEEK_API_KEY)")
+                    help="(deprecated) live is automatic once a key exists")
+    sv.add_argument("--offline", action="store_true",
+                    help="force the offline stub model even with a key")
     sv.add_argument("--auto", action="store_true",
                     help="start the autonomous scheduler immediately")
     sv.add_argument("--interval", type=int, default=900,

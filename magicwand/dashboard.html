@@ -93,6 +93,39 @@
   .tier .d { color: var(--dim); font-size: 11px; margin-top: 3px; }
   svg { display: block; width: 100%; height: 120px; }
   .empty { color: var(--dimmer); font-style: italic; padding: 8px 0; }
+  .modal-wrap {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: rgba(0,0,0,.72); align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .modal-wrap.open { display: flex; }
+  .modal-panel {
+    display: flex; flex-direction: column;
+    background: #12151c; border: 1px solid #242a36; border-radius: 10px;
+    width: min(620px, 96vw); max-height: min(92vh, 900px); overflow: hidden;
+  }
+  .modal-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; border-bottom: 1px solid #242a36; flex: 0 0 auto;
+    font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: #8b94a7;
+  }
+  .modal-x {
+    background: none; border: none; color: #8b94a7; font-size: 18px;
+    line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .modal-x:hover { color: #fff; }
+  .modal-body { padding: 16px 18px; overflow-y: auto; flex: 1 1 auto; }
+  .modal-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 12px 18px; border-top: 1px solid #242a36;
+    flex: 0 0 auto; background: #12151c;
+  }
+  .section-label {
+    font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: #8b94a7; margin: 0 0 8px;
+  }
+  .section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #242a36; }
   .toast {
     position: fixed; right: 16px; bottom: 16px; max-width: 460px;
     background: #1a2030; border: 1px solid var(--line); border-radius: 6px;
@@ -208,14 +241,15 @@
   <button style="margin-left:10px" onclick="openSettings()">Connect API</button>
 </div>
 
-<div id="settingsModal" style="display:none; position:fixed; inset:0;
-     background:rgba(0,0,0,.72); z-index:50; align-items:center; justify-content:center">
-  <div style="background:#12151c; border:1px solid #242a36; border-radius:10px;
-       padding:20px 22px; width:min(560px,92vw)">
-    <h2 style="margin:0 0 14px; font-size:12px; letter-spacing:1.5px;
-        text-transform:uppercase; color:#8b94a7">Connect APIs</h2>
+<div id="settingsModal" class="modal-wrap">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <span>Connect APIs</span>
+      <button class="modal-x" onclick="closeSettings()" title="Close">×</button>
+    </div>
+    <div class="modal-body">
 
-    <div class="dim" style="margin-bottom:4px">Model</div>
+    <div class="section-label">Model</div>
     <div style="display:flex; gap:6px; margin-bottom:12px">
       <select id="modelSelect" style="flex:1; background:#0d0f14; color:#e6e9ef;
               border:1px solid #242a36; border-radius:5px; padding:8px 10px; font:inherit">
@@ -225,7 +259,7 @@
     </div>
     <div class="dimmer" id="modelInfo" style="margin:-6px 0 12px"></div>
 
-    <div class="dim" style="margin-bottom:4px">DeepSeek API key (BYOK)</div>
+    <div class="section-label" style="margin-top:12px">DeepSeek API key (BYOK)</div>
     <div style="display:flex; gap:6px">
       <input id="keyInput" type="password" placeholder="sk-..." autocomplete="off"
              style="flex:1; background:#0d0f14; color:#e6e9ef; border:1px solid #242a36;
@@ -243,8 +277,8 @@
       Get a key at platform.deepseek.com/api_keys
     </div>
 
-    <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
-      <div class="dim" style="margin-bottom:6px">Automatic backups</div>
+    <div class="section">
+      <div class="section-label">Automatic backups</div>
       <label style="display:flex; gap:8px; align-items:center">
         <input type="checkbox" id="backupEnabled" checked>
         <span>Back up locally on a schedule</span>
@@ -265,21 +299,23 @@
       <div class="dimmer" style="margin-top:4px">Written to backups/ with mode 0600 — they contain your key. Nothing is uploaded.</div>
     </div>
 
-    <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
-      <div class="dim" style="margin-bottom:6px">Market data</div>
+    <div class="section">
+      <div class="section-label">Market data</div>
       <div class="dim">Public feeds — no key needed, nothing to connect.</div>
       <div class="dimmer">Coinbase candles, Binance derivatives, RSS news,
         Reddit, on-chain proxies.</div>
     </div>
 
-    <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
-      <div class="dim" style="margin-bottom:6px">Broker / exchange (trading)</div>
+    <div class="section">
+      <div class="section-label">Broker / exchange (trading)</div>
       <div class="dim">Not implemented — this build cannot place real orders.</div>
       <div class="dimmer">Paper trading only. There is no live adapter in the code.</div>
     </div>
 
-    <div style="margin-top:18px; text-align:right">
-      <button onclick="closeSettings()">Done</button>
+    </div>
+    <div class="modal-foot">
+      <span class="dimmer" id="modalMode"></span>
+      <button class="primary" onclick="closeSettings()">Done</button>
     </div>
   </div>
 </div>
@@ -587,8 +623,8 @@ function renderTiers(tiers, current) {
   });
 }
 
-function openSettings() { $("settingsModal").style.display = "flex"; loadSettings(); }
-function closeSettings() { $("settingsModal").style.display = "none"; refresh(); }
+function openSettings() { $("settingsModal").classList.add("open"); loadSettings(); }
+function closeSettings() { $("settingsModal").classList.remove("open"); refresh(); }
 
 function renderModels(models, selected, source) {
   const sel = $("modelSelect");
@@ -601,7 +637,7 @@ function renderModels(models, selected, source) {
   sel.innerHTML = models.map(m => {
     const tags = [];
     if (m.vision) tags.push("vision");
-    if (m.context_window) tags.push((m.context_window / 1000) + "k ctx");
+    if (m.context_window) tags.push(fmtCtx(m.context_window));
     return `<option value="${esc(m.id)}" ${m.id === selected ? "selected" : ""}>`
       + `${esc(m.name || m.id)} — ${esc(m.id)}${tags.length ? "  [" + tags.join(", ") + "]" : ""}`
       + `</option>`;
@@ -612,12 +648,19 @@ function renderModels(models, selected, source) {
     + (source ? ` <span class="dimmer">· list source: ${esc(source)}</span>` : "");
 }
 
+function fmtCtx(n) {
+  if (!n) return "";
+  if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1) + "M ctx";
+  if (n >= 1e3) return Math.round(n / 1e3) + "k ctx";
+  return n + " ctx";
+}
+
 function describeModel(m) {
   if (!m || !m.id) return "";
   const bits = [];
   if (m.vision) bits.push('<span class="good">sees images</span>');
   else bits.push('<span class="bad">text only — vision disabled</span>');
-  if (m.context_window) bits.push((m.context_window / 1000) + "k context");
+  if (m.context_window) bits.push(fmtCtx(m.context_window).replace(" ctx", " context"));
   if ((m.effort_levels || []).length) bits.push("effort: " + m.effort_levels.join("/"));
   return bits.join(" · ");
 }
@@ -655,6 +698,8 @@ async function loadSettings() {
     $("keyInput").placeholder = "sk-...";
   }
   $("keyInput").value = "";
+  $("modalMode").textContent = st.has_key
+    ? `live · ${st.model}` : "offline stub — connect a key";
   // Model picker from the cached catalogue (no extra call on open).
   try {
     const state = await (await fetch("/api/state")).json();

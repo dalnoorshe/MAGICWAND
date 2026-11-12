@@ -61,7 +61,7 @@ def _bad(msg: str) -> str:
     return f"  {RED}✗{OFF} {msg}"
 
 
-def preflight() -> bool:
+def preflight(force_offline: bool = False) -> bool:
     """Checks that matter. Returns False only if we cannot start at all."""
     print(f"\n{BOLD}MAGICWAND{OFF} {DIM}— paper-trading system{OFF}\n")
     ok = True
@@ -85,7 +85,7 @@ def preflight() -> bool:
     from magicwand.settings_store import SettingsStore, resolve_key
     st = SettingsStore(ROOT / "data" / "settings.json")
     pub = st.public_dict()
-    if pub["has_key"]:
+    if pub["has_key"] and not force_offline:
         print(_ok(f"DeepSeek key connected ({pub['key_hint']}, "
                   f"from {pub['key_source']}) — live agents + vision"))
     else:
@@ -139,15 +139,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--no-browser", action="store_true")
-    ap.add_argument("--interval", type=int, default=0,
-                    help="autopilot seconds between ticks (0 = don't autostart)")
+    ap.add_argument("--interval", type=int, default=900,
+                    help="autopilot seconds between ticks (0 = start idle)")
+    ap.add_argument("--offline", action="store_true",
+                    help="force the offline stub model even if a key is connected")
     ap.add_argument("--live", action="store_true",
                     help="require the real model; refuse to fall back to offline")
     ap.add_argument("--bg", action="store_true",
                     help="run detached in the background (survives closing this terminal)")
     args = ap.parse_args(argv)
 
-    if not preflight():
+    if not preflight(args.offline):
         return 1
 
     from magicwand.service import detect_instances
@@ -181,13 +183,13 @@ def main(argv: list[str] | None = None) -> int:
     pub = SettingsStore(ROOT / "data" / "settings.json").public_dict()
     if pub["has_key"]:
         cfg.market.symbol = pub.get("symbol") or cfg.market.symbol
-    if args.live and not resolve_key(ROOT):
+    if args.live and (not resolve_key(ROOT) or args.offline):
         print(_bad("--live was requested but no DeepSeek key is connected"))
         print(f"    {DIM}start without --live, then use Connect API in the console{OFF}")
         return 2
 
     url = f"http://{args.host}:{port}"
-    interval = args.interval or 900
+    interval = args.interval if args.interval and args.interval > 0 else 900
     autostart = args.interval != 0
 
     print()
@@ -203,8 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.bg:
         from magicwand import service as svc
         out = svc.start(root=ROOT, port=port, interval=interval,
-                        mode="live" if pub["has_key"] else "offline",
-                        autostart=(args.interval != 0))
+                        mode="offline" if args.offline else "live",
+                        autostart=(args.interval != 0),
+                        extra=["--offline"] if args.offline else None)
         if not out.get("ok"):
             print(_bad(f"failed to start in background: {out.get('error')}"))
             if out.get("log_tail"):
@@ -224,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return serve(root=ROOT, host=args.host, port=port, cfg=cfg,
-                     offline=not pub["has_key"], autostart=autostart,
+                     offline=args.offline, autostart=autostart,
                      interval=interval)
     except KeyboardInterrupt:
         print("\nstopped.")

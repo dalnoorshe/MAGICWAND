@@ -76,7 +76,7 @@ wishes but cannot lie about what it granted.
 ## Try it
 
 ```bash
-python3 -m unittest discover -s tests -v   # 24 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 64 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -86,6 +86,95 @@ python3 wand.py status                      # scorecard
 Optional: `pip install -e .` then use `wand` instead of `python3 wand.py`.
 
 Zero dependencies. Pure standard library, Python 3.10+.
+
+## The research layer: four agents, one scoreboard
+
+`wand research` runs the DeepSeek research agents against live market data.
+
+```
+                    +-------------------+
+   public data ---> | MARKET SNAPSHOT   |  derivatives · news · social · onchain
+   (no keys)        +---------+---------+
+                              |
+        +---------+-----------+-----------+---------+
+        |         |                       |         |
+   derivatives   news                  social    onchain
+        |         |                       |         |
+        +---------+----------+------------+---------+
+                            |
+                    +-------v--------+
+                    |  SYNTHESIZER   |  evidence score, veto decision
+                    +-------+--------+
+                            |
+              +-------------+-------------+
+              |                           |
+      main strategy                  AGENT DESK
+      (may be vetoed)             (sandboxed, earn-to-trade)
+```
+
+**What the agents can and cannot do.** A reader may `support`, `veto`, or stay
+`neutral`. Only `veto` changes behaviour: it can block the strategy's trade.
+No agent can open a position, change a side, or touch the main account. `support`
+is recorded and graded, never acted on — that is the line that keeps a
+confident narrator out of the money path.
+
+**The Agent Desk** is where agents *can* act autonomously, and it is a
+separate pot funded once at 10% of total equity. Inside it, walls that are
+arithmetic rather than advice:
+
+| Wall | Default |
+|---|---|
+| Pot | 10% of total equity, funded once, never auto-topped-up |
+| Per trade | ≤10% of the desk pot |
+| Trades per day | 1 |
+| Confidence bar | 0.80 ("when the agent is sure") |
+| Symbol | whitelist: BTC/ETH/SOL-USD — a hallucinated ticker is a refused order |
+| Stop | mandatory on every entry; no stop, no trade |
+| Autonomy | reviewed after 10 graded trades; ≤45% hit rate revokes it automatically |
+| Kill switch | the operator's switch stops the desk too |
+
+Every refusal is written to the ledger with its reason. Nothing is silently
+dropped.
+
+**Agents earn influence and lose it.** Each verdict is stored as a dated claim
+with a horizon, graded against the price when the horizon expires, and tallied
+per agent. Influence on the synthesizer scales with that hit rate: an agent
+with no record gets a cautious 0.5 weight, a 80% hit rate gets ~1.0, a 20%
+hit rate gets ~0.05. The scoreboard is the whole point — without it this is
+just an opinionated newsletter.
+
+### Run it
+
+```bash
+# with your own key (BYOK — never stored by this project)
+export DEEPSEEK_API_KEY=sk-...
+python3 wand.py research                       # live sources, DeepSeek agents
+python3 wand.py research --desk                # plus the sandbox may act
+python3 wand.py desk                            # desk state + autonomy status
+
+# no key needed: deterministic fake model, still exercises the whole pipeline
+python3 wand.py research --offline --offline-snapshot
+```
+
+### What each source actually gives you
+
+| Source | Real | Notes |
+|---|---|---|
+| Derivatives | Binance public API | funding, retail + top-trader long/short, OI change, taker buy/sell |
+| News | Cointelegraph, Decrypt, Bitcoin Magazine, CoinDesk RSS | 24h window, deduped, timestamped |
+| Social | Reddit Atom feed | JSON API is blocked; the feed works with a bot UA. **It rate-limits hard.** |
+| On-chain | blockchain.info, DefiLlama, CoinGecko | mempool, stablecoin supply, market-cap flows — **proxies, and labelled as such** |
+
+A source that fails is marked `DEGRADED` and named in the prompt. Absence of
+data lowers confidence; it is never quietly treated as a neutral signal.
+
+Known limits, stated plainly:
+- True exchange netflow needs a keyed provider (Whale Alert/Glassnode). The
+  current on-chain reader sees proxies, and its prompt says so.
+- Reddit will 429 this IP for a while after heavy use. The agent reports
+  `DEGRADED` and the cycle continues. Don't poll it on a short timer.
+- Agent verdicts are graded on price direction over the stated horizon. That is
+  a coarse measure of a nuanced claim, and coarse honesty beats fine narrative.
 
 ## What it found on day one
 
@@ -151,10 +240,13 @@ reality check, and then fund it from savings, not from hope.
 - [x] Pessimistic paper broker, risk engine, hash-chained ledger
 - [x] Backtester with delayed fills and a built-in reality check
 - [x] Self-grading scorecard
+- [x] Four research agents on live public data (derivatives, news, social, on-chain)
+- [x] Veto-only synthesizer with per-agent track-record weighting
+- [x] Sandboxed Agent Desk: autonomous trading inside hard walls, revocable by record
+- [x] BYOK DeepSeek client with daily call and cost budgets
 - [ ] Longer history (the free hourly window is only ~12 days)
 - [ ] Walk-forward / out-of-sample split, so tuning cannot cheat
 - [ ] Portfolio-level risk across several symbols
-- [ ] LLM research layer: news summaries, filing parsing, plain-English trade explanations — *outside* the money decision
 - [ ] Live execution — only after a paper strategy survives the reality check, at 1% risk, with a kill switch
 
 ## Safety

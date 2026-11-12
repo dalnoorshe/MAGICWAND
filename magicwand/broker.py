@@ -77,7 +77,9 @@ class PaperBroker:
         price = self._fill_price(Side.BUY, quote)
         notional = price * qty
         fee = self._fee(notional)
-        if notional < self.risk.min_notional:
+        # Slippage can move the notional a hair below the minimum; only reject
+        # when it is genuinely undersized. Callers size off the worst-case fill.
+        if notional < self.risk.min_notional * 0.98:
             return None  # risk engine should have caught this; broker refuses too
         if notional + fee > pf.cash + 1e-9:
             raise BrokerError(

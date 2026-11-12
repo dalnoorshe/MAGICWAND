@@ -20,8 +20,12 @@ from pathlib import Path
 from . import backtest as bt
 from . import data as data_mod
 from . import paper
+from . import research as research_mod
+from . import research_loop
 from .config import Config
-from .ledger import Ledger
+from .desk import AgentDesk, DeskConfig
+from .ledger import Ledger, scorecard
+from .llm import DeepSeekClient, fake_canned
 from .strategy import build as build_strategy
 
 
@@ -149,6 +153,109 @@ def cmd_verify(cfg: Config, args) -> int:
     return 0 if ok else 1
 
 
+def cmd_research(cfg: Config, args) -> int:
+    """One research cycle: read the market, get verdicts, maybe act in the desk."""
+    client = DeepSeekClient(
+        model=args.model,
+        fake=fake_canned if args.offline else None,
+        max_calls_per_day=args.max_calls,
+        max_cost_per_day_usd=args.max_cost,
+    )
+    if not client.available():
+        print("No API key found.\n"
+              "  Set it in your shell (BYOK):  export DEEPSEEK_API_KEY=sk-...\n"
+              "  or run offline:               python3 wand.py research --offline",
+              file=sys.stderr)
+        return 2
+
+    symbol = args.symbol or cfg.market.symbol
+    price, atr = args.price, args.atr
+    if price is None or atr is None:
+        bars = data_mod.fetch(cfg.market.exchange, symbol, cfg.market.timeframe,
+                              cfg.market.candles, seed=cfg.seed)
+        price = bars[-1].close if price is None else price
+        from .indicators import atr as _atr
+        a = _atr(bars, cfg.strategy.atr_period)
+        atr = (a[-1] or price * 0.01) if atr is None else atr
+
+    dcfg = DeskConfig(enabled=args.desk,
+                      max_fraction_of_equity=args.desk_fraction,
+                      min_confidence=args.min_confidence)
+    snapshot = None
+    if args.offline_snapshot:
+        snapshot = research_mod.MarketSnapshot(
+            ts=research_mod.iso(research_mod.utcnow()), symbol=symbol, price=price)
+        snapshot.sources["derivatives"] = research_mod.Source(
+            "derivatives", True, snapshot.ts,
+            {"funding_rate_pct": 0.01, "funding_mean_pct": 0.008,
+             "long_short_ratio": 2.7, "top_long_short_ratio": 2.3,
+             "open_interest_change_pct": -1.8, "taker_buy_sell_ratio": 0.89})
+        snapshot.sources["news"] = research_mod.Source(
+            "news", True, snapshot.ts, {"count": 1, "items": [
+                {"title": "Exchange reports large customer inflows",
+                 "published": snapshot.ts, "source": "fixture", "link": ""}]})
+        snapshot.sources["social"] = research_mod.Source(
+            "social", False, snapshot.ts, error="offline fixture: feed unavailable")
+        snapshot.sources["onchain"] = research_mod.Source(
+            "onchain", True, snapshot.ts,
+            {"mempool_tx": 61000, "mempool_z": 0.03,
+             "stablecoin_supply_change_pct": 0.02,
+             "total_mcap_change_pct": 1.1, "caveats": ["fixture"]})
+
+    cycle = research_loop.run_cycle(
+        cfg, client, price=price, atr=atr, symbol=symbol,
+        subreddit=args.subreddit, dcfg=dcfg, snapshot=snapshot)
+
+    rep = cycle.report
+    print(f"\n  RESEARCH CYCLE  {rep.ts}  {symbol} @ {price:.4f}")
+    print(f"  decision        {rep.decision.upper()}"
+          + (f"  (vetoed by {', '.join(rep.vetoed_by)})" if rep.vetoed_by else ""))
+    print(f"  evidence score  {rep.evidence_score:+.3f}")
+    print(f"  summary         {rep.summary}")
+    for v in rep.agents:
+        if v.error:
+            print(f"  - {v.agent:12s} DEGRADED  {v.error}")
+            continue
+        print(f"  - {v.agent:12s} {v.stance:8s} conf {v.confidence:.2f} "
+              f"evidence {v.evidence_score:+.2f}")
+        if v.thesis:
+            print(f"      {v.thesis[:200]}")
+    print(f"  claims recorded {len(cycle.recorded_claims)}   graded this run {cycle.graded}")
+    if cycle.desk_outcome is not None:
+        o = cycle.desk_outcome
+        print(f"  desk            " + (("TRADE PLACED: " + o.get("detail", ""))
+                                       if o.get("ok") else
+                                       ("no trade: " + str(o.get("reason")))))
+    if cycle.track_record:
+        print("  agent record    " + ", ".join(
+            f"{a} {s['right']}/{s['n']}" for a, s in cycle.track_record.items()))
+    print(f"  cost            ${rep.cost_usd:.5f} across {rep.calls} calls")
+    print()
+    return 0
+
+
+def cmd_desk(cfg: Config, args) -> int:
+    dcfg = DeskConfig(enabled=True)
+    desk = AgentDesk(cfg, dcfg)
+    armed, note = desk.review()
+    print(json.dumps({
+        "cash": round(desk.state.pot, 6),
+        "equity_at_entry": round(desk.equity(desk.state.position.entry_price), 6)
+        if desk.state.position else None,
+        "position": None if desk.state.position is None else {
+            "symbol": desk.state.position.symbol,
+            "qty": desk.state.position.qty,
+            "entry": desk.state.position.entry_price,
+            "stop": desk.state.position.stop,
+        },
+        "trades": len(desk.state.trades),
+        "autonomy_armed": armed,
+        "note": note,
+        "revoked_reason": desk.state.revoked_reason,
+    }, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="wand", description="MAGICWAND paper trading bot")
     p.add_argument("--config", help="path to a JSON config")
@@ -179,6 +286,27 @@ def main(argv: list[str] | None = None) -> int:
 
     v = sub.add_parser("verify", help="check ledger integrity")
     v.set_defaults(fn=cmd_verify)
+
+    rs = sub.add_parser("research", help="run the DeepSeek research agents")
+    rs.add_argument("--symbol")
+    rs.add_argument("--model", default="deepseek-flash")
+    rs.add_argument("--offline", action="store_true",
+                    help="use the deterministic fake model (no key, no network)")
+    rs.add_argument("--offline-snapshot", action="store_true",
+                    help="use a fixture snapshot instead of live sources")
+    rs.add_argument("--desk", action="store_true",
+                    help="let the agent desk place an assured trade")
+    rs.add_argument("--desk-fraction", type=float, default=0.10)
+    rs.add_argument("--min-confidence", type=float, default=0.80)
+    rs.add_argument("--subreddit", default="solana")
+    rs.add_argument("--price", type=float)
+    rs.add_argument("--atr", type=float)
+    rs.add_argument("--max-calls", type=int, default=400)
+    rs.add_argument("--max-cost", type=float, default=2.0)
+    rs.set_defaults(fn=cmd_research)
+
+    dk = sub.add_parser("desk", help="show the agent desk sandbox state")
+    dk.set_defaults(fn=cmd_desk)
 
     args = p.parse_args(argv)
     cfg = _load_config(args.config)

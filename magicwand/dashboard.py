@@ -43,6 +43,18 @@ from .settings_store import (SettingsError, SettingsStore, load_models_cache,
 _FALLBACK_MODEL_IDS = {"deepseek-flash", "deepseek-v4-pro"}
 
 
+def get_backups(root: Path, cfg: Config):
+    from .backup_scheduler import get as _get
+    st = SettingsStore(root / "data" / "settings.json").load()
+    b = _get(root, interval_hours=st.backup_interval_hours,
+             keep=st.backup_keep, enabled=st.auto_backup)
+    # Keep the running scheduler in sync with the saved settings.
+    b.state.enabled = st.auto_backup
+    b.state.interval_hours = st.backup_interval_hours
+    b.state.keep = st.backup_keep
+    return b
+
+
 def get_autopilot(root: Path, cfg: Config, offline: bool = True):
     from .autopilot import get as _get
     return _get(root, cfg)
@@ -167,6 +179,8 @@ def build_state(root: Path, cfg: Config) -> dict:
         "autopilot": autopilot_raw,
         "settings": SettingsStore(data / "settings.json").public_dict(),
         "models": load_models_cache(root),
+        "backups": (get_backups(root, cfg).status()
+                    if (root / "data").exists() else {}),
         "model_mode": ("live" if resolve_key(root) and not service.get("offline")
                        else "offline"),
     }
@@ -382,6 +396,12 @@ class Handler(BaseHTTPRequestHandler):
             "settings_change", {"key": "deepseek", "action": "saved",
                                 "hint": cur.masked_key(), "model": cur.model,
                                 "by": "human", "via": "dashboard"})
+        # Capture the credential in a backup immediately: this is the one moment
+        # where losing the file would mean re-issuing a key.
+        try:
+            get_backups(self.root, self.cfg).run_now(by="after-key-save")
+        except Exception:  # noqa: BLE001 - a failed backup must not fail the save
+            pass
         self._json({"ok": True, "settings": st.public_dict()})
 
     def _model_is_known(self, root: Path, model: str) -> bool:
@@ -471,6 +491,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+        elif path == "/api/backup":
+            self._json(get_backups(self.root, self.cfg).status())
         elif path == "/api/storage":
             from .storage import storage_report
             self._json(storage_report(self.root))
@@ -506,6 +528,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "reflection": ref.to_dict()})
             elif path == "/api/settings":
                 self._settings_post()
+            elif path == "/api/backup":
+                b = self._body()
+                sched = get_backups(self.root, self.cfg)
+                action = str(b.get("action", "now"))
+                if action == "now":
+                    out = sched.run_now(by="human")
+                    self._json({"ok": out.get("ok", False), "result": out,
+                                "status": sched.status()})
+                elif action == "config":
+                    out = sched.configure(
+                        enabled=b.get("enabled"),
+                        interval_hours=b.get("interval_hours"),
+                        keep=b.get("keep"))
+                    self._json({"ok": True, **out})
+                else:
+                    self._json({"ok": False, "error": f"unknown action {action!r}"}, 400)
             elif path == "/api/storage":
                 from .storage import backup, housekeep
                 b = self._body()
@@ -595,6 +633,21 @@ def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
     except Exception as e:  # noqa: BLE001 - housekeeping must never block startup
         print(f"  housekeeping skipped: {type(e).__name__}: {e}")
     print(f"  mode    {'offline (fake model)' if offline else 'live DeepSeek'}")
+    # Automatic backups: start the clock regardless of the autopilot, because
+    # the ledger is written even by a single manual tick.
+    try:
+        sched = get_backups(Handler.root, Handler.cfg)
+        bst = sched.start()
+        age = sched.age_hours()
+        if bst.get("ok"):
+            print(f"  backups  every {sched.state.interval_hours:g}h, "
+                  f"keep {sched.state.keep}  "
+                  f"({('last ' + str(age) + 'h ago') if age is not None else 'none yet'})")
+        else:
+            print(f"  backups  {bst.get('error')}")
+    except Exception as e:  # noqa: BLE001 - never block startup on backups
+        print(f"  backups  unavailable: {type(e).__name__}: {e}")
+
     if autostart:
         ap = get_autopilot(Handler.root, Handler.cfg, offline)
         ap.state.offline = offline

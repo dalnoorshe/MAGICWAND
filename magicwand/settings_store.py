@@ -37,6 +37,10 @@ class Settings:
     autotick_seconds: int = 900
     subreddit: str = "solana"
     symbol: str = "SOL-USD"
+    # Backups: on by default, every 12h, keep the newest 14.
+    auto_backup: bool = True
+    backup_interval_hours: float = 12.0
+    backup_keep: int = 14
     # Secret material — never serialised to the browser
     _deepseek_key: str = field(default="", repr=False)
 
@@ -81,6 +85,9 @@ class SettingsStore:
             autotick_seconds=int(d.get("autotick_seconds", 900)),
             subreddit=str(d.get("subreddit", "solana")),
             symbol=str(d.get("symbol", "SOL-USD")),
+            auto_backup=bool(d.get("auto_backup", True)),
+            backup_interval_hours=float(d.get("backup_interval_hours", 12.0)),
+            backup_keep=int(d.get("backup_keep", 14)),
             _deepseek_key=str(d.get("_deepseek_key", "")),
         )
 
@@ -91,6 +98,9 @@ class SettingsStore:
             "autotick_seconds": int(s.autotick_seconds),
             "subreddit": s.subreddit,
             "symbol": s.symbol,
+            "auto_backup": bool(s.auto_backup),
+            "backup_interval_hours": float(s.backup_interval_hours),
+            "backup_keep": int(s.backup_keep),
             "_deepseek_key": s._deepseek_key,
         }
         tmp = self.path.with_suffix(".tmp")
@@ -134,6 +144,9 @@ class SettingsStore:
             "autotick_seconds": s.autotick_seconds,
             "subreddit": s.subreddit,
             "symbol": s.symbol,
+            "auto_backup": bool(s.auto_backup),
+            "backup_interval_hours": float(s.backup_interval_hours),
+            "backup_keep": int(s.backup_keep),
             "has_key": bool(s.effective_key()),
             "key_hint": s.masked_key(),
             "key_source": s.key_source(),

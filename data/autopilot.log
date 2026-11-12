@@ -48,3 +48,5 @@
 [autopilot 13:07:31] autopilot started
 [autopilot 13:16:35] autopilot started
 [autopilot 13:16:48] tick 1: research: 4/4 readers reported; evidence +0.00 | idea 'offline_mean_revert_13' refused: near-duplicate of offline_mean_revert_12 (max param difference 6.1% of r
+[autopilot 13:20:53] autopilot started
+[autopilot 13:21:05] tick 1: research: 4/4 readers reported; evidence +0.00 | idea 'offline_mean_revert_14' refused: near-duplicate of offline_mean_revert_13 (max param difference 6.1% of r

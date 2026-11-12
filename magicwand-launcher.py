@@ -32,6 +32,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+# Line-buffer output. Python block-buffers stdout when it is a pipe or a file,
+# so a launcher that then runs forever shows nothing until it exits — which
+# looks exactly like a hang. This bit me once; it is cheap to prevent.
+try:
+    sys.stdout.reconfigure(line_buffering=True)   # type: ignore[attr-defined]
+    sys.stderr.reconfigure(line_buffering=True)   # type: ignore[attr-defined]
+except (AttributeError, ValueError):
+    pass
+
 GREEN = "\033[32m"
 RED = "\033[31m"
 YELLOW = "\033[33m"
@@ -82,6 +91,21 @@ def preflight() -> bool:
     else:
         print(_warn("no DeepSeek key yet — the console will offer to connect one"))
         print(f"    {DIM}you can also: export DEEPSEEK_API_KEY=sk-...{OFF}")
+
+    # Backup health belongs in the preflight: it is the only thing here that
+    # cannot be regenerated.
+    try:
+        from magicwand.storage import backup_age_seconds, list_backups
+        age = backup_age_seconds(ROOT)
+        n = len(list_backups(ROOT))
+        if age is None:
+            print(_warn("no backup yet — one will be taken automatically"))
+        else:
+            hours = age / 3600.0
+            when = (f"{hours:.1f}h ago" if hours >= 1 else f"{int(age / 60)}m ago")
+            print(_ok(f"backups: {n} kept, last {when} (automatic)"))
+    except Exception:  # noqa: BLE001
+        print(_warn("backup status unavailable"))
 
     print(_ok("market data: public feeds, no key needed"))
     print(_warn("broker: none — this build cannot place real orders (paper only)"))

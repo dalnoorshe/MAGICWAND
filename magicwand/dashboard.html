@@ -176,6 +176,7 @@
 
   <section class="card span-4">
     <h2>Local storage <span class="dimmer" id="storageTotal"></span></h2>
+    <div id="backupStatus" class="dim" style="margin-bottom:8px">backups: …</div>
     <div id="storageBody" class="dimmer">reading…</div>
     <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap">
       <button id="btnBackup">Back up now</button>
@@ -240,6 +241,28 @@
     <div class="dimmer" style="margin-top:6px">
       Stored locally in data/settings.json (owner-only). Never sent to this page.
       Get a key at platform.deepseek.com/api_keys
+    </div>
+
+    <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
+      <div class="dim" style="margin-bottom:6px">Automatic backups</div>
+      <label style="display:flex; gap:8px; align-items:center">
+        <input type="checkbox" id="backupEnabled" checked>
+        <span>Back up locally on a schedule</span>
+      </label>
+      <div style="display:flex; gap:6px; align-items:center; margin-top:8px">
+        <span class="dim">every</span>
+        <select id="backupInterval" style="background:#0d0f14;color:#e6e9ef;border:1px solid #242a36;border-radius:5px;padding:6px">
+          <option value="1">1 hour</option>
+          <option value="6">6 hours</option>
+          <option value="12" selected>12 hours</option>
+          <option value="24">24 hours</option>
+        </select>
+        <span class="dim">keep</span>
+        <input id="backupKeep" type="number" min="1" max="365" value="14"
+               style="width:64px;background:#0d0f14;color:#e6e9ef;border:1px solid #242a36;border-radius:5px;padding:6px">
+      </div>
+      <div class="dimmer" id="backupInfo" style="margin-top:6px"></div>
+      <div class="dimmer" style="margin-top:4px">Written to backups/ with mode 0600 — they contain your key. Nothing is uploaded.</div>
     </div>
 
     <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
@@ -411,6 +434,35 @@ function renderFeed(recent) {
   }).join("");
 }
 
+function fmtAge(h) {
+  if (h === null || h === undefined) return "never";
+  if (h < 1) return Math.round(h * 60) + " min ago";
+  if (h < 48) return h.toFixed(1) + "h ago";
+  return (h / 24).toFixed(1) + "d ago";
+}
+
+async function renderBackups() {
+  try {
+    const b = await (await fetch("/api/backup")).json();
+    const el = $("backupStatus");
+    if (!b || b.enabled === undefined) { el.textContent = "backups: unavailable"; return; }
+    const latest = b.latest ? esc(b.latest) : "none yet";
+    const state = b.last_ok === false && b.last_error
+      ? `<span class="bad">${esc(b.last_error.slice(0, 80))}</span>`
+      : `<span class="good">${b.enabled ? "automatic" : "off"}</span>`;
+    el.innerHTML = `backups: ${state} · last ${fmtAge(b.age_hours)} · `
+      + `${b.archives} kept · every ${b.interval_hours}h · ${latest}`;
+    // reflect saved config in the settings form
+    if ($("backupEnabled")) $("backupEnabled").checked = !!b.enabled;
+    if ($("backupInterval")) $("backupInterval").value = String(Math.round(b.interval_hours));
+    if ($("backupKeep")) $("backupKeep").value = String(b.keep);
+    if ($("backupInfo")) $("backupInfo").textContent =
+      `last run ${b.last_run ? new Date(b.last_run).toLocaleString() : "never"}`
+      + (b.last_file ? ` · ${esc(b.last_file.split("/").pop())}` : "")
+      + (b.errors ? ` · ${b.errors} error(s)` : "");
+  } catch (e) { /* leave as is */ }
+}
+
 async function renderStorage() {
   try {
     const d = await (await fetch("/api/storage")).json();
@@ -426,9 +478,12 @@ async function renderStorage() {
 }
 
 $("btnBackup").onclick = async () => {
-  const r = await post("/api/storage", {action: "backup"});
-  toast(r.ok ? ("backup written: " + r.file + " (" + r.kb + " KB)") : ("failed: " + r.error));
-  renderStorage();
+  const r = await post("/api/backup", {action: "now"});
+  const res = (r.result || {});
+  toast(res.ok ? ("backup verified: " + String(res.kb) + " KB, " + res.files +
+                  " files, rotated out " + res.rotated_out)
+               : ("backup FAILED: " + res.error));
+  renderStorage(); renderBackups();
 };
 $("btnPrune").onclick = async () => {
   const r = await post("/api/storage", {action: "prune"});
@@ -611,6 +666,20 @@ $("btnSaveKey").onclick = async () => {
   toast("key saved. Now press Test connection.");
   loadSettings(); refresh();
 };
+async function saveBackupConfig() {
+  const r = await post("/api/backup", {
+    action: "config",
+    enabled: $("backupEnabled").checked,
+    interval_hours: Number($("backupInterval").value),
+    keep: Number($("backupKeep").value),
+  });
+  if (!r.ok) toast("could not save backup settings: " + (r.error || ""));
+  renderBackups();
+}
+["backupEnabled", "backupInterval", "backupKeep"].forEach(id => {
+  const el = $(id); if (el) el.onchange = saveBackupConfig;
+});
+
 $("btnClearKey").onclick = async () => {
   if (!confirm("Remove the saved DeepSeek key?")) return;
   const r = await post("/api/settings", {action: "clear"});
@@ -648,6 +717,7 @@ async function refresh() {
     renderAutopilot(s.autopilot);
     renderChart(s);
     renderStorage();
+    renderBackups();
   } catch (e) {
     toast("dashboard error: " + e.message);
   }

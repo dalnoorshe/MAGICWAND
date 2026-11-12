@@ -149,8 +149,15 @@ def backup(root: str | Path, out_dir: str | Path | None = None) -> Path:
     data = root / "data"
     out = Path(out_dir) if out_dir else root / "backups"
     out.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    # Microseconds plus a collision counter: two backups in the same second
+    # must never overwrite each other. (They did, before this was fixed —
+    # a manual backup right after an automatic one silently replaced it.)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     archive = out / f"magicwand-backup-{stamp}.tar.gz"
+    n = 1
+    while archive.exists():
+        archive = out / f"magicwand-backup-{stamp}-{n}.tar.gz"
+        n += 1
 
     with tarfile.open(archive, "w:gz") as tar:
         if data.exists():
@@ -195,6 +202,95 @@ def restore(root: str | Path, archive: str | Path,
     return {"ok": True, "extracted": len(extracted), "root": str(root)}
 
 
+# --------------------------------------------------------------------------
+# Automatic backups
+# --------------------------------------------------------------------------
+
+BACKUP_DIR = "backups"
+
+
+def backup_dir(root: str | Path) -> Path:
+    return Path(root) / BACKUP_DIR
+
+
+def list_backups(root: str | Path) -> list[Path]:
+    d = backup_dir(root)
+    if not d.exists():
+        return []
+    return sorted(d.glob("magicwand-backup-*.tar.gz"),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def latest_backup(root: str | Path) -> Path | None:
+    found = list_backups(root)
+    return found[0] if found else None
+
+
+def backup_age_seconds(root: str | Path) -> float | None:
+    p = latest_backup(root)
+    if p is None:
+        return None
+    try:
+        return max(0.0, time.time() - p.stat().st_mtime)
+    except OSError:
+        return None
+
+
+def verify_archive(path: str | Path) -> dict:
+    """Read the archive back. A backup nobody has opened is a hope, not a backup."""
+    p = Path(path)
+    try:
+        with tarfile.open(p, "r:gz") as tar:
+            names = tar.getnames()
+        has_ledger = any(n.endswith("ledger.jsonl") for n in names)
+        return {"ok": True, "files": len(names), "has_ledger": has_ledger,
+                "kb": round(p.stat().st_size / 1024, 1)}
+    except (tarfile.TarError, OSError) as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def prune_backups(root: str | Path, keep: int = 14) -> PruneReport:
+    """Keep the newest `keep` archives; delete older ones."""
+    rep = PruneReport()
+    files = list_backups(root)
+    for p in files[keep:]:
+        try:
+            size = p.stat().st_size
+            p.unlink()
+            rep.removed.append(p.name)
+            rep.bytes_freed += size
+        except OSError:
+            rep.skipped.append(p.name)
+    rep.kept = min(len(files), keep)
+    return rep
+
+
+def auto_backup(root: str | Path, keep: int = 14,
+                verify: bool = True) -> dict:
+    """Create, verify, and rotate a backup in one step.
+
+    Safe to call on a schedule. Returns what happened, including why it failed
+    — an automatic backup that silently stops working is worse than none,
+    because you stop worrying about it.
+    """
+    root = Path(root)
+    try:
+        archive = backup(root)
+    except (OSError, tarfile.TarError) as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    info = verify_archive(archive) if verify else {"ok": True}
+    if not info.get("ok"):
+        return {"ok": False, "error": f"archive failed verification: {info.get('error')}",
+                "file": archive.name}
+    if verify and not info.get("has_ledger") and (root / "data" / "ledger.jsonl").exists():
+        return {"ok": False, "file": archive.name,
+                "error": "archive is missing the ledger"}
+    pruned = prune_backups(root, keep=keep)
+    return {"ok": True, "file": str(archive), "kb": info.get("kb"),
+            "files": info.get("files"), "verified": bool(verify),
+            "rotated_out": len(pruned.removed), "kept": pruned.kept}
+
+
 def storage_report(root: str | Path) -> dict:
     """What is on disk and how big it is. For the console and `wand storage`."""
     root = Path(root)
@@ -227,6 +323,7 @@ def storage_report(root: str | Path) -> dict:
         "groups_kb": {k: round(v / 1024, 1) for k, v in sorted(groups.items())},
         "protected": sorted(p.name for p in data.iterdir()
                             if p.is_file() and p.name in PROTECTED_NAMES),
-        "backups": sorted(p.name for p in (root / "backups").glob("*.tar.gz")
-                          ) if (root / "backups").exists() else [],
+        "backups": [p.name for p in list_backups(root)],
+        "backup_age_hours": (round(backup_age_seconds(root) / 3600, 2)
+                             if backup_age_seconds(root) is not None else None),
     }

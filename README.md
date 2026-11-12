@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 164 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 179 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -281,7 +281,48 @@ command its own PID namespace with `--die-with-parent`, so detached survival
 could only be verified there by construction; on a normal desktop it behaves as
 described.)
 
-### Housekeeping and backups
+### Backups happen automatically
+
+You do not need to remember. The server takes a **verified, rotated, local**
+backup on a schedule — every 12 hours by default, keeping the newest 14 — plus
+an immediate one the moment you save an API key, plus one shortly after every
+start if the last is stale.
+
+Each archive is **read back and checked for the ledger** before it counts. A
+backup nobody has opened is a hope, not a backup; if verification fails it is
+reported as a failure, not recorded as a success.
+
+```
+backups/magicwand-backup-20261112T132058522824.tar.gz   0600
+```
+
+Managing it, if you want to:
+
+```bash
+python3 wand.py storage                    # sizes, plus backup age
+curl -s localhost:8787/api/backup          # schedule, runs, errors, last file
+```
+
+In the console: the *Local storage* card shows `backups: automatic · last 2.3h
+ago · 14 kept`, with **Back up now**. The Settings dialog has the on/off toggle,
+interval (1/6/12/24h) and how many to keep.
+
+What that means in practice: the two things you cannot regenerate — the
+hash-chained ledger and your API key — are never more than a few hours old, on
+your own disk, without you doing anything.
+
+**Copy one somewhere else occasionally.** Automatic backups protect against
+mistakes; they do not protect against losing the disk. The archive is a plain
+`tar.gz`:
+
+```bash
+cp backups/magicwand-backup-*.tar.gz ~/Dropbox/   # or a USB stick, or both
+```
+
+It contains your API key, so treat it like one: it is `0600`, and it is not
+committed to git (`backups/` is gitignored).
+
+### Housekeeping and backup commands
 
 Old research snapshots are pruned automatically on every start (they are
 evidence, not state — the decision they supported is already in the ledger).

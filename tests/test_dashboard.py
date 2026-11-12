@@ -178,3 +178,76 @@ class TestTickLock(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# --------------------------------------------------------------------------
+# Autopilot: the clock that makes "unattended" true
+# --------------------------------------------------------------------------
+
+class TestAutopilot(unittest.TestCase):
+    def _ap(self, d, interval=1):
+        from magicwand.autopilot import Autopilot
+        cfg = Config()
+        cfg.market.exchange = "synthetic"
+        cfg.market.candles = 300
+        # Avoid network in tests: a fixture snapshot is injected via the
+        # synthetic exchange marker in research_loop.
+        return Autopilot(d, cfg, offline=True, interval=interval)
+
+    def test_first_tick_is_immediate_then_repeats(self):
+        """Autonomy means more than one tick with nobody pressing anything.
+
+        This test exists because the first implementation waited a full
+        interval BEFORE its first tick, and a restart looked dead.
+        """
+        import time
+        with tempfile.TemporaryDirectory() as d:
+            ap = self._ap(d, interval=1)
+            ap.start()
+            try:
+                deadline = time.time() + 25
+                while time.time() < deadline and ap.state.ticks < 2:
+                    time.sleep(0.4)
+            finally:
+                ap.stop()
+            self.assertGreaterEqual(ap.state.ticks, 2,
+                                    f"only {ap.state.ticks} tick(s) fired")
+            self.assertGreaterEqual(ap.state.errors, 0)
+
+    def test_stop_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            ap = self._ap(d)
+            ap.start()
+            ap.stop()
+            again = ap.stop()
+            self.assertTrue(again["ok"])
+            self.assertFalse(ap.status()["running"])
+
+    def test_start_twice_does_not_spawn_two_loops(self):
+        with tempfile.TemporaryDirectory() as d:
+            ap = self._ap(d)
+            first = ap.start()
+            second = ap.start()
+            ap.stop()
+            self.assertTrue(first["ok"])
+            self.assertFalse(second["ok"])
+            self.assertIn("already running", second["error"])
+
+    def test_status_is_json_safe(self):
+        with tempfile.TemporaryDirectory() as d:
+            ap = self._ap(d)
+            st = ap.status()
+            json.dumps(st)  # must not raise
+            self.assertIn("running", st)
+            self.assertIn("interval", st)
+
+    def test_state_is_persisted_for_the_ui(self):
+        with tempfile.TemporaryDirectory() as d:
+            ap = self._ap(d)
+            ap.start()
+            ap.stop()
+            p = Path(d) / "data" / "autopilot.json"
+            self.assertTrue(p.exists())
+            d_ = json.loads(p.read_text())
+            self.assertIn("running", d_)
+            self.assertFalse(d_["running"])

@@ -76,7 +76,7 @@ wishes but cannot lie about what it granted.
 ## Try it
 
 ```bash
-python3 -m unittest discover -s tests -v   # 105 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 110 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -179,9 +179,33 @@ Known limits, stated plainly:
 ## The operator console
 
 ```bash
-python3 wand.py serve                  # http://127.0.0.1:8787
-python3 wand.py serve --live           # use the real DeepSeek API
+python3 wand.py serve                          # console only, idle
+python3 wand.py serve --auto                   # console + autonomous scheduler
+python3 wand.py serve --auto --interval 300    # ...ticking every 5 minutes
+python3 wand.py serve --live --auto            # real DeepSeek API
 ```
+
+### Autopilot — the part that makes "unattended" true
+
+The console alone does nothing: it renders state and waits. That is why
+`--auto` exists. The autopilot is a single daemon thread inside the server that
+fires `tick()` **immediately** on start and then every `interval` seconds,
+forever, with no human involved:
+
+- each tick: refresh data → grade matured claims → manage the desk → run the
+  research agents → reflect → maybe propose → maybe trade (only a gate-approved
+  strategy, only if research did not veto)
+- it holds the same tick lock as the "Run one tick" button, so a human click
+  cannot double-trade with the scheduler
+- failures are caught per tick, counted, and written to `data/autopilot.log` —
+  an autopilot that dies silently is worse than one that never started
+- it **cannot raise the risk tier.** It runs whatever the human-set tier allows
+- the log records `by: autopilot` vs `by: human` so machine actions are never
+  confused with yours
+
+The interval is deliberately slow by default (15 min): the data moves on hours,
+the strategy is hourly, and ticking every minute would burn tokens re-reading
+the same candles. Only the first tick is immediate.
 
 A local, dependency-free dashboard (one HTML page served by the same Python)
 that reads the same files the bot writes:
@@ -319,6 +343,8 @@ reality check, and then fund it from savings, not from hope.
 - [x] Risk tiers + gatekeeper (CHIMERA invariant), human-only escalation
 - [x] Reflection engine with bounded self-tuning and family demotion
 - [x] Local zero-dependency operator dashboard
+- [x] Autopilot: an in-server clock so the system runs unattended
+- [x] Equity marks written every tick, so the chart has a real series
 - [ ] Longer history (the free hourly window is only ~12 days)
 - [ ] Walk-forward / out-of-sample split, so tuning cannot cheat
 - [ ] Portfolio-level risk across several symbols

@@ -36,6 +36,11 @@ from .ledger import Ledger, scorecard
 from .reflect import PolicyStore, reflect_and_persist
 
 
+def get_autopilot(root: Path, cfg: Config, offline: bool = True):
+    from .autopilot import get as _get
+    return _get(root, cfg)
+
+
 # --------------------------------------------------------------------------
 # State assembly
 # --------------------------------------------------------------------------
@@ -94,6 +99,7 @@ def build_state(root: Path, cfg: Config) -> dict:
         reasoning=str(policy_raw.get("reasoning", "")),
     )
 
+    autopilot_raw = _read_json(data / "autopilot.json", {})
     last_research = None
     last_proposal = None
     for e in ledger.entries():
@@ -150,6 +156,7 @@ def build_state(root: Path, cfg: Config) -> dict:
         "equity_series": _equity_series(ledger),
         "recent": _recent(ledger),
         "service": service,
+        "autopilot": autopilot_raw,
     }
 
 
@@ -203,10 +210,11 @@ class _Lock:
         return False
 
 
-def run_tick(root: Path, cfg: Config, offline: bool = True,
-             tier: Optional[RiskTier] = None) -> dict:
+def _tick_with_client(root: Path, cfg: Config, offline: bool = True,
+                      tier: Optional[RiskTier] = None) -> dict:
+    """Run one tick and return its report dict. Caller must hold the tick lock."""
     from .desk import DeskConfig
-    from .llm import DeepSeekClient, fake_canned, fake_proposal
+    from .llm import DeepSeekClient, fake_canned
     from .runner import tick
 
     client = DeepSeekClient(
@@ -215,16 +223,31 @@ def run_tick(root: Path, cfg: Config, offline: bool = True,
         max_cost_per_day_usd=1.0,
     )
     if not client.available():
-        return {"ok": False, "error": "no DEEPSEEK_API_KEY and not in offline mode"}
+        raise RuntimeError("no DEEPSEEK_API_KEY and not in offline mode")
 
     policy = PolicyStore(root / "data" / "policy.json").load()
     eff_tier = tier if tier is not None else policy.tier
     dcfg = DeskConfig(enabled=True, tier=eff_tier,
                       min_confidence=policy.effective()["min_confidence"])
-    with _Lock(root / "data" / "tick.lock"):
-        rep = tick(cfg, client, dcfg, root=root, offline=offline,
-                   propose_enabled=True, reflect_enabled=True)
-    return {"ok": True, "report": rep.to_dict()}
+    rep = tick(cfg, client, dcfg, root=root, offline=offline,
+               propose_enabled=True, reflect_enabled=True)
+    return rep.to_dict()
+
+
+def run_tick(root: Path, cfg: Config, offline: bool = True,
+             tier: Optional[RiskTier] = None,
+             by: str = "human") -> dict:
+    """One tick, triggered by a human (the dashboard button)."""
+    try:
+        with _Lock(root / "data" / "tick.lock"):
+            Ledger(root / cfg.ledger.path).append(
+                "tick_request", {"by": by})
+            rep = _tick_with_client(root, cfg, offline=offline, tier=tier)
+        return {"ok": True, "report": rep}
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 # --------------------------------------------------------------------------
@@ -312,6 +335,18 @@ class Handler(BaseHTTPRequestHandler):
                 (self.root / "data" / "memory.json").write_text(
                     json.dumps(mem, indent=2))
                 self._json({"ok": True, "reflection": ref.to_dict()})
+            elif path == "/api/autopilot":
+                b = self._body()
+                ap = get_autopilot(self.root, self.cfg, self.offline)
+                action = str(b.get("action", "status"))
+                if action == "start":
+                    out = ap.start(interval=b.get("interval"),
+                                   offline=b.get("offline", self.offline))
+                elif action == "stop":
+                    out = ap.stop()
+                else:
+                    out = {"ok": True, "status": ap.status()}
+                self._json(out)
             elif path == "/api/tier":
                 b = self._body()
                 if not b.get("confirm"):
@@ -343,7 +378,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
-          cfg: Optional[Config] = None, offline: bool = True) -> int:
+          cfg: Optional[Config] = None, offline: bool = True,
+          autostart: bool = False, interval: int = 900) -> int:
     Handler.root = Path(root).resolve()
     Handler.cfg = cfg or Config()
     Handler.offline = offline
@@ -360,6 +396,14 @@ def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
         "url": url,
     }, indent=2))
     print(f"  mode    {'offline (fake model)' if offline else 'live DeepSeek'}")
+    if autostart:
+        ap = get_autopilot(Handler.root, Handler.cfg, offline)
+        ap.state.offline = offline
+        out = ap.start(interval=interval, offline=offline)
+        print(f"  AUTOPILOT {'started' if out.get('ok') else 'failed'}: "
+              f"every {interval}s, no human needed")
+    else:
+        print("  autopilot idle — start it from the console or with --auto")
     print("  Ctrl-C to stop. Local only — no authentication.")
     try:
         httpd.serve_forever()

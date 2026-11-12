@@ -415,6 +415,34 @@ def fetch_onchain() -> Source:
 # Snapshot builder
 # --------------------------------------------------------------------------
 
+def fixture_snapshot(symbol: str, price: float = 0.0) -> MarketSnapshot:
+    """A deterministic, offline snapshot. Used for demos and tests.
+
+    It is explicit about being a fixture: the social source is DEGRADED so the
+    system exercises its own 'missing data' path rather than pretending live
+    data exists.
+    """
+    ts = iso(utcnow())
+    snap = MarketSnapshot(ts=ts, symbol=symbol, price=price or None)
+    snap.sources["derivatives"] = Source("derivatives", True, ts, {
+        "funding_rate_pct": 0.0069, "funding_mean_pct": 0.008,
+        "long_short_ratio": 2.76, "top_long_short_ratio": 2.35,
+        "open_interest_change_pct": -1.87, "taker_buy_sell_ratio": 0.90})
+    snap.sources["news"] = Source("news", True, ts, {"count": 2, "items": [
+        {"title": "Exchange reports record customer inflows",
+         "published": ts, "source": "fixture", "link": ""},
+        {"title": "Regulator opens review of listed crypto funds",
+         "published": ts, "source": "fixture", "link": ""}]})
+    snap.sources["social"] = Source("social", False, ts,
+                                    error="offline fixture: feed not fetched")
+    snap.sources["onchain"] = Source("onchain", True, ts, {
+        "mempool_tx": 61000, "mempool_z": 0.03,
+        "stablecoin_supply_change_pct": 0.02,
+        "total_mcap_change_pct": 1.1, "btc_dominance": 59.8,
+        "caveats": ["fixture data"]})
+    return snap
+
+
 def build_snapshot(symbol: str = "BTC", news_hours: int = 24,
                    subreddit: str = "solana", price: Optional[float] = None,
                    cache_dir: Optional[str] = None) -> MarketSnapshot:

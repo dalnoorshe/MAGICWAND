@@ -201,10 +201,15 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
 
     # 4. research
     if snapshot is None:
-        base = symbol.split("-")[0]
-        snapshot = research_mod.build_snapshot(
-            base, subreddit=subreddit, price=price,
-            cache_dir=str(root) if cfg.market.exchange != "synthetic" else None)
+        if cfg.market.exchange == "synthetic":
+            # Offline/demo mode: never touch the network. A fixture snapshot
+            # keeps the tick fast and deterministic, and stops tests from
+            # hammering free endpoints.
+            snapshot = research_mod.fixture_snapshot(symbol, price)
+        else:
+            base = symbol.split("-")[0]
+            snapshot = research_mod.build_snapshot(
+                base, subreddit=subreddit, price=price, cache_dir=str(root))
     cycle = research_loop.run_cycle(
         cfg, client, price=price, atr=atr, symbol=symbol, subreddit=subreddit,
         dcfg=None, root=root, snapshot=snapshot, ledger=ledger)
@@ -231,6 +236,19 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
 
     # 6. trade ONLY a validated strategy, and only if research did not veto
     rep.desk_equity = desk.equity(price) if dcfg.enabled else 0.0
+
+    # Record a mark every tick. Without this the equity chart has no series at
+    # all, because only the manual `step` path used to write marks.
+    try:
+        account = _total_equity(cfg, root)
+        ledger.append("mark", {
+            "equity": round(account, 6),
+            "price": round(price, 6),
+            "desk_equity": round(rep.desk_equity, 6),
+            "by": "tick",
+        })
+    except Exception:  # noqa: BLE001 - a mark is bookkeeping, never fatal
+        pass
     if not dcfg.enabled:
         return rep
     if desk.state.position is not None:

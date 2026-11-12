@@ -108,7 +108,9 @@
   <div class="kpi"><span class="l">desk</span><span class="v mono" id="deskpot">—</span></div>
   <div class="kpi"><span class="l">tier</span><span class="badge b-dim" id="tier">—</span></div>
   <div class="kpi"><span class="l">ledger</span><span class="badge" id="chain">—</span></div>
+  <div class="kpi"><span class="l">autopilot</span><span class="badge b-dim" id="autobadge">idle</span></div>
   <div class="grow"></div>
+  <button class="primary" id="btnAuto">Start autopilot</button>
   <button class="primary" id="btnTick">Run one tick</button>
   <button id="btnReflect">Reflect</button>
   <span class="badge b-dim" id="mode">—</span>
@@ -139,6 +141,24 @@
     <div class="tiers" id="tiers"></div>
     <div class="dimmer" style="margin-top:8px">
       Agents can never raise their own tier. This control writes a human action to the ledger.
+    </div>
+  </section>
+
+  <section class="card span-4">
+    <h2>Autopilot — runs without you</h2>
+    <div id="autobody" class="dimmer">not running</div>
+    <div style="margin-top:10px; display:flex; gap:6px; align-items:center">
+      <span class="dim">every</span>
+      <select id="autointerval" style="background:#171b24;color:#e6e9ef;border:1px solid #242a36;border-radius:4px;padding:5px">
+        <option value="300">5 min</option>
+        <option value="900" selected>15 min</option>
+        <option value="1800">30 min</option>
+        <option value="3600">1 hour</option>
+      </select>
+    </div>
+    <div class="dimmer" style="margin-top:8px">
+      Each scheduled tick runs research, reflection, and may trade inside the desk.
+      It cannot raise its own tier.
     </div>
   </section>
 
@@ -303,6 +323,30 @@ function renderFeed(recent) {
   }).join("");
 }
 
+function renderAutopilot(a) {
+  const badge = $("autobadge");
+  const body = $("autobody");
+  const running = !!(a && a.running);
+  badge.textContent = running ? "running" : "idle";
+  badge.className = "badge " + (running ? "b-good" : "b-dim");
+  $("btnAuto").textContent = running ? "Stop autopilot" : "Start autopilot";
+  if (!a || (!a.ticks && !running)) {
+    body.innerHTML = '<div class="empty">autopilot not running — the system only acts when a tick fires</div>';
+    return;
+  }
+  const next = (a.next_in_seconds === null || a.next_in_seconds === undefined)
+    ? "—" : a.next_in_seconds + "s";
+  body.innerHTML = `
+    <table>
+      <tr><td class="dim">ticks</td><td class="num">${a.ticks ?? 0}</td></tr>
+      <tr><td class="dim">errors</td><td class="num ${a.errors ? "bad" : ""}">${a.errors ?? 0}</td></tr>
+      <tr><td class="dim">interval</td><td class="num">${a.interval ?? "—"}s</td></tr>
+      <tr><td class="dim">next in</td><td class="num">${running ? next : "—"}</td></tr>
+      <tr><td class="dim">last tick</td><td class="dim">${a.last_tick_at ? new Date(a.last_tick_at).toLocaleTimeString() : "—"}</td></tr>
+    </table>
+    <div class="dim" style="margin-top:6px">${esc(a.last_result || "")}</div>`;
+}
+
 function renderTiers(tiers, current) {
   const box = $("tiers");
   const desc = {
@@ -344,6 +388,7 @@ async function refresh() {
     renderTiers(s.tiers, s.policy.tier);
     renderStrategies(s.strategies);
     renderFeed(s.recent);
+    renderAutopilot(s.autopilot);
   } catch (e) {
     toast("dashboard error: " + e.message);
   }
@@ -360,6 +405,15 @@ $("btnTick").onclick = async () => {
       toast([...(rep.actions || []), ...(rep.notes || [])].join("\n") || "tick complete, no action");
     }
   } finally { $("btnTick").disabled = false; refresh(); }
+};
+$("btnAuto").onclick = async () => {
+  const running = $("autobadge").textContent === "running";
+  const body = running
+    ? {action: "stop"}
+    : {action: "start", interval: Number($("autointerval").value)};
+  const r = await post("/api/autopilot", body);
+  toast(r.ok === false ? ("failed: " + r.error) : (running ? "autopilot stopped" : "autopilot started"));
+  refresh();
 };
 $("btnReflect").onclick = async () => {
   const r = await post("/api/reflect", {});

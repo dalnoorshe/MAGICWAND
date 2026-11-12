@@ -16,3 +16,24 @@
 [autopilot 09:36:50] tick 1: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | strategy 'offline_mean_revert' rejected: REJECTED: not profitable a
 [autopilot 09:37:29] tick 2: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
 [autopilot 09:38:09] tick 3: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:38:48] tick 4: research: 3/4 readers reported; 1 degraded; evidence -0.50; VETO by derivatives, news, onchain | idea 'offline_mean_revert' refused: identical to a previous att
+[autopilot 09:39:29] tick 5: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:40:09] tick 6: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:40:48] tick 7: research: 3/4 readers reported; 1 degraded; evidence -0.50; VETO by derivatives, news, onchain | idea 'offline_mean_revert' refused: identical to a previous att
+[autopilot 09:41:28] tick 8: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:42:08] tick 9: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:42:52] tick 10: research: 3/4 readers reported; 1 degraded; evidence -0.50; VETO by derivatives, news, onchain | idea 'offline_mean_revert' refused: identical to a previous att
+[autopilot 09:43:34] tick 11: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:44:13] tick 12: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:44:55] tick 13: research: 3/4 readers reported; 1 degraded; evidence -0.50; VETO by derivatives, news, onchain | idea 'offline_mean_revert' refused: identical to a previous att
+[autopilot 09:45:35] tick 14: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:46:15] tick 15: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:46:57] tick 16: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:47:37] tick 17: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:48:17] tick 18: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:48:57] tick 19: research: 3/4 readers reported; 1 degraded; evidence -0.33 | idea 'offline_mean_revert' refused: identical to a previous attempt (offline_mean_revert) | desk st
+[autopilot 09:49:38] tick 20: research: 4/4 readers reported; evidence -0.33 | idea 'offline_mean_revert' refused: identical to a previous attempt (offline_mean_revert) | desk stood down: no
+[autopilot 12:47:02] autopilot started
+[autopilot 12:47:15] tick 1: research: 4/4 readers reported; evidence +0.00 | idea 'offline_mean_revert_24' refused: near-duplicate of offline_mean_revert (max param difference 8.6% of rang
+[autopilot 12:47:31] autopilot started
+[autopilot 12:47:48] tick 1: research: 0/4 readers reported; 4 degraded; evidence +0.00 | desk stood down: no strategy has passed the gate yet

@@ -113,6 +113,7 @@
   <button class="primary" id="btnAuto">Start autopilot</button>
   <button class="primary" id="btnTick">Run one tick</button>
   <button id="btnReflect">Reflect</button>
+  <button id="btnSettings">Settings</button>
   <span class="badge b-dim" id="mode">—</span>
 </header>
 
@@ -183,6 +184,58 @@
     <div class="feed" id="feed"></div>
   </section>
 </main>
+
+<div id="connectBanner" style="display:none; margin:0 16px; margin-top:12px;
+     padding:12px 14px; border:1px solid #5a441c; background:#221a0d;
+     border-radius:8px; display:none">
+  <b style="color:#ffb020">Connect DeepSeek to go live</b>
+  <span class="dim"> — the console is running with the offline stand-in model
+  (fake readings, no vision). Enter your key to use the real agents.</span>
+  <button style="margin-left:10px" onclick="openSettings()">Connect API</button>
+</div>
+
+<div id="settingsModal" style="display:none; position:fixed; inset:0;
+     background:rgba(0,0,0,.72); z-index:50; align-items:center; justify-content:center">
+  <div style="background:#12151c; border:1px solid #242a36; border-radius:10px;
+       padding:20px 22px; width:min(560px,92vw)">
+    <h2 style="margin:0 0 14px; font-size:12px; letter-spacing:1.5px;
+        text-transform:uppercase; color:#8b94a7">Connect APIs</h2>
+
+    <div class="dim" style="margin-bottom:4px">DeepSeek (BYOK)</div>
+    <div style="display:flex; gap:6px">
+      <input id="keyInput" type="password" placeholder="sk-..." autocomplete="off"
+             style="flex:1; background:#0d0f14; color:#e6e9ef; border:1px solid #242a36;
+                    border-radius:5px; padding:8px 10px; font:inherit">
+      <button class="primary" id="btnSaveKey">Save</button>
+    </div>
+    <div class="dimmer" style="margin-top:6px" id="keyStatus">no key saved</div>
+    <div style="display:flex; gap:6px; margin-top:10px">
+      <button id="btnTestKey">Test connection</button>
+      <button id="btnClearKey" class="danger">Remove key</button>
+    </div>
+    <div class="dimmer" style="margin-top:6px">
+      Stored locally in data/settings.json (owner-only). Never sent to this page.
+      Get a key at platform.deepseek.com/api_keys
+    </div>
+
+    <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
+      <div class="dim" style="margin-bottom:6px">Market data</div>
+      <div class="dim">Public feeds — no key needed, nothing to connect.</div>
+      <div class="dimmer">Coinbase candles, Binance derivatives, RSS news,
+        Reddit, on-chain proxies.</div>
+    </div>
+
+    <div style="margin-top:16px; border-top:1px solid #242a36; padding-top:12px">
+      <div class="dim" style="margin-bottom:6px">Broker / exchange (trading)</div>
+      <div class="dim">Not implemented — this build cannot place real orders.</div>
+      <div class="dimmer">Paper trading only. There is no live adapter in the code.</div>
+    </div>
+
+    <div style="margin-top:18px; text-align:right">
+      <button onclick="closeSettings()">Done</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -419,12 +472,55 @@ function renderTiers(tiers, current) {
   });
 }
 
+function openSettings() { $("settingsModal").style.display = "flex"; loadSettings(); }
+function closeSettings() { $("settingsModal").style.display = "none"; refresh(); }
+
+async function loadSettings() {
+  const st = await (await fetch("/api/settings")).json();
+  const el = $("keyStatus");
+  if (st.has_key) {
+    el.innerHTML = `<span class="good">connected</span> · ${esc(st.key_hint)} · source: ${esc(st.key_source)}`;
+    $("keyInput").placeholder = "replace saved key…";
+  } else {
+    el.innerHTML = '<span class="bad">no key saved</span> · running offline';
+    $("keyInput").placeholder = "sk-...";
+  }
+  $("keyInput").value = "";
+  return st;
+}
+
+$("btnSettings").onclick = openSettings;
+$("btnSaveKey").onclick = async () => {
+  const key = $("keyInput").value.trim();
+  if (!key) { toast("paste a key first"); return; }
+  const r = await post("/api/settings", {action: "save", key});
+  if (!r.ok) { toast("failed: " + r.error); return; }
+  toast("key saved. Now press Test connection.");
+  loadSettings(); refresh();
+};
+$("btnClearKey").onclick = async () => {
+  if (!confirm("Remove the saved DeepSeek key?")) return;
+  const r = await post("/api/settings", {action: "clear"});
+  toast(r.ok ? "key removed" : "failed"); loadSettings(); refresh();
+};
+$("btnTestKey").onclick = async () => {
+  toast("testing…");
+  $("btnTestKey").disabled = true;
+  try {
+    const r = await post("/api/test-key", {});
+    toast(r.ok ? ("WORKS · model " + r.model + " replied " + JSON.stringify(r.reply)
+                  + " · cost $" + r.cost_usd) : ("FAILED: " + r.error));
+  } finally { $("btnTestKey").disabled = false; }
+};
+
 async function refresh() {
   try {
     const s = await (await fetch("/api/state")).json();
     $("equity").textContent = money(s.account_equity);
-    $("mode").textContent = s.service && s.service.mode ? s.service.mode : "offline";
-    $("mode").className = "badge " + (s.service && s.service.mode === "live" ? "b-good" : "b-dim");
+    const live = (s.model_mode === "live") || (s.settings && s.settings.has_key);
+    $("mode").textContent = live ? "live model" : "offline";
+    $("mode").className = "badge " + (live ? "b-good" : "b-warn");
+    $("connectBanner").style.display = (s.settings && s.settings.has_key) ? "none" : "block";
     $("tier").textContent = s.policy.tier_name;
     $("tier").className = "badge " + (s.policy.tier === 0 ? "b-dim" : s.policy.tier >= 3 ? "b-bad" : "b-warn");
     $("chain").textContent = s.ledger.ok ? `chain ok · ${s.ledger.entries}` : "CHAIN BROKEN";

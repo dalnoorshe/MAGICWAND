@@ -34,6 +34,7 @@ from .config import Config
 from .gatekeeper import TIER_NAMES, Policy, RiskTier
 from .ledger import Ledger, scorecard
 from .reflect import PolicyStore, reflect_and_persist
+from .settings_store import SettingsError, SettingsStore, resolve_key
 
 
 def get_autopilot(root: Path, cfg: Config, offline: bool = True):
@@ -158,6 +159,9 @@ def build_state(root: Path, cfg: Config) -> dict:
         "recent": _recent(ledger),
         "service": service,
         "autopilot": autopilot_raw,
+        "settings": SettingsStore(data / "settings.json").public_dict(),
+        "model_mode": ("live" if resolve_key(root) and not service.get("offline")
+                       else "offline"),
     }
 
 
@@ -235,13 +239,18 @@ def _tick_with_client(root: Path, cfg: Config, offline: bool = True,
     from .llm import DeepSeekClient, fake_canned
     from .runner import tick
 
+    st = SettingsStore(root / "data" / "settings.json")
+    settings = st.load()
+    use_fake = offline or not resolve_key(root)
     client = DeepSeekClient(
-        fake=(fake_canned if offline else None),
+        model=settings.model,
+        fake=(fake_canned if use_fake else None),
         max_calls_per_day=60,
         max_cost_per_day_usd=1.0,
+        settings_path=str(root / "data" / "settings.json"),
     )
     if not client.available():
-        raise RuntimeError("no DEEPSEEK_API_KEY and not in offline mode")
+        raise RuntimeError("no API key: connect one in Settings, or run offline")
 
     policy = PolicyStore(root / "data" / "policy.json").load()
     eff_tier = tier if tier is not None else policy.tier
@@ -320,12 +329,73 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- routes ----
 
+    def _settings_get(self) -> None:
+        st = SettingsStore(self.root / "data" / "settings.json")
+        self._json(st.public_dict())
+
+    def _settings_post(self) -> None:
+        """Save or clear the API key. This is the only way a key enters the app
+        without an environment variable, and it is a human action."""
+        st = SettingsStore(self.root / "data" / "settings.json")
+        b = self._body()
+        action = str(b.get("action", "save"))
+        if action == "clear":
+            st.clear_key()
+            Ledger(self.root / self.cfg.ledger.path).append(
+                "settings_change", {"key": "deepseek", "action": "cleared",
+                                    "by": "human", "via": "dashboard"})
+            self._json({"ok": True, "settings": st.public_dict()})
+            return
+        if action != "save":
+            self._json({"ok": False, "error": f"unknown action {action!r}"}, 400)
+            return
+        try:
+            st.set_key(str(b.get("key", "")))
+        except SettingsError as e:
+            self._json({"ok": False, "error": str(e)}, 400)
+            return
+        cur = st.load()
+        if b.get("model"):
+            cur.model = str(b["model"])
+        if b.get("autotick_seconds"):
+            cur.autotick_seconds = max(60, int(b["autotick_seconds"]))
+        st.save(cur)
+        Ledger(self.root / self.cfg.ledger.path).append(
+            "settings_change", {"key": "deepseek", "action": "saved",
+                                "hint": cur.masked_key(), "model": cur.model,
+                                "by": "human", "via": "dashboard"})
+        self._json({"ok": True, "settings": st.public_dict()})
+
+    def _test_key(self) -> None:
+        """Make one tiny real call so the operator knows the key works."""
+        key = resolve_key(self.root)
+        if not key:
+            self._json({"ok": False, "error": "no key saved yet"}, 400)
+            return
+        from .llm import DeepSeekClient, LLMError
+        st = SettingsStore(self.root / "data" / "settings.json")
+        client = DeepSeekClient(model=st.load().model,
+                                settings_path=str(self.root / "data" / "settings.json"))
+        try:
+            out = client.chat(system="Reply with the single word: ok",
+                              user="ping", max_tokens=8, json_mode=False,
+                              retries=0)
+            self._json({"ok": True, "reply": (out or "").strip()[:60],
+                        "model": client.model,
+                        "cost_usd": round(client.usage.cost_usd, 6)})
+        except LLMError as e:
+            self._json({"ok": False, "error": str(e)[:300]}, 400)
+        except Exception as e:  # noqa: BLE001
+            self._json({"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}, 500)
+
     def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             self._html(_load_page())
         elif path == "/api/state":
             self._json(build_state(self.root, self.cfg))
+        elif path == "/api/settings":
+            self._settings_get()
         elif path == "/api/chart":
             charts = sorted((self.root / "data" / "charts").glob("*.png"),
                             key=lambda p: p.stat().st_mtime, reverse=True)
@@ -369,6 +439,10 @@ class Handler(BaseHTTPRequestHandler):
                 (self.root / "data" / "memory.json").write_text(
                     json.dumps(mem, indent=2))
                 self._json({"ok": True, "reflection": ref.to_dict()})
+            elif path == "/api/settings":
+                self._settings_post()
+            elif path == "/api/test-key":
+                self._test_key()
             elif path == "/api/autopilot":
                 b = self._body()
                 ap = get_autopilot(self.root, self.cfg, self.offline)

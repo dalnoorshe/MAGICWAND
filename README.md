@@ -76,7 +76,8 @@ wishes but cannot lie about what it granted.
 ## Try it
 
 ```bash
-python3 -m unittest discover -s tests -v   # 128 tests, no dependencies
+./start.sh                                 # ONE COMMAND: console + browser
+python3 -m unittest discover -s tests -v   # 138 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -177,9 +178,52 @@ Known limits, stated plainly:
 - Agent verdicts are graded on price direction over the stated horizon. That is
   a coarse measure of a nuanced claim, and coarse honesty beats fine narrative.
 
+## Run it: one command
+
+```bash
+cd ~/Music/trd/MAGICWAND
+./start.sh
+```
+
+That is the whole thing. It checks the environment, starts the server, and opens
+the console in your browser (`http://127.0.0.1:8787`, or the next free port).
+
+On first run there is no API key, so the console starts in **offline mode** with
+the stand-in model and shows a *"Connect DeepSeek to go live"* banner. Click
+**Settings → paste your key → Save → Test connection**. That is the entire
+setup; you never edit `.bashrc`.
+
+```
+./start.sh                 console + browser, autopilot every 15 min
+./start.sh --no-browser    don't open a browser
+./start.sh --interval 0    start with the autopilot idle
+./start.sh --port 9000     different port
+./start.sh --live          refuse to start without a connected key
+```
+
+### Connecting the APIs (in the UI)
+
+| API | How | Why |
+|---|---|---|
+| **DeepSeek** | Settings → paste `sk-…` → Save → Test connection | BYOK. Enables the real agents and vision. Stored in `data/settings.json`, mode `0600`. |
+| **Market data** | nothing to connect | Coinbase candles, Binance derivatives, RSS, Reddit, on-chain — all public, no keys |
+| **Broker** | not available | there is no live broker in this build; paper only |
+
+Security notes that are enforced, not promised:
+
+- the key is **never sent to the browser** — `GET /api/settings` returns only a
+  masked hint like `sk-te…0000` and the source
+- the settings file is created owner-only (`0600`) and `data/` is gitignored
+- **Test connection** makes one tiny real call and reports the exact error, so a
+  bad key is discovered immediately rather than at 3am
+- an environment variable (`DEEPSEEK_API_KEY`) still wins if you prefer it
+- saving or removing a key is recorded in the ledger as `settings_change`
+  (the fact of the change, never the secret)
+
 ## The operator console
 
 ```bash
+./start.sh                                     # the normal way
 python3 wand.py serve                          # console only, idle
 python3 wand.py serve --auto                   # console + autonomous scheduler
 python3 wand.py serve --auto --interval 300    # ...ticking every 5 minutes

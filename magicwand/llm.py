@@ -65,11 +65,24 @@ class DeepSeekClient:  # noqa: D101
     # A deterministic offline stand-in, used by tests and by `--offline`.
     fake: Optional[Any] = None
     usage: Usage = field(default_factory=Usage)
+    # Optional path to the console settings file. When set, a key saved through
+    # the UI is used without any environment variable.
+    settings_path: Optional[str] = None
 
     # ---- key handling ----
 
+    def _stored_key(self) -> str:
+        if not self.settings_path:
+            return ""
+        try:
+            from .settings_store import SettingsStore
+            return SettingsStore(self.settings_path).load().effective_key()
+        except Exception:  # noqa: BLE001 - a broken settings file is not fatal
+            return ""
+
     def _key(self) -> str:
-        k = self.api_key or os.environ.get("DEEPSEEK_API_KEY", "")
+        k = (self.api_key or os.environ.get("DEEPSEEK_API_KEY", "")
+             or self._stored_key())
         if not k and self.fake is None:
             raise LLMError(
                 "no DeepSeek API key. Set DEEPSEEK_API_KEY (BYOK), or run with "
@@ -78,10 +91,13 @@ class DeepSeekClient:  # noqa: D101
 
     def vision_available(self) -> bool:
         """Vision needs the real API; the offline fake cannot see images."""
-        return self.fake is None and bool(self.api_key or os.environ.get("DEEPSEEK_API_KEY"))
+        return self.fake is None and bool(self.api_key
+                                          or os.environ.get("DEEPSEEK_API_KEY")
+                                          or self._stored_key())
 
     def available(self) -> bool:
-        return bool(self.fake is not None or self.api_key or os.environ.get("DEEPSEEK_API_KEY"))
+        return bool(self.fake is not None or self.api_key
+                    or os.environ.get("DEEPSEEK_API_KEY") or self._stored_key())
 
     # ---- budgeting ----
 

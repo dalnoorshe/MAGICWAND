@@ -46,3 +46,5 @@
 [autopilot 13:01:31] tick 3: research: 4/4 readers reported; evidence +0.00 | proposal rejected before validation: family '' is not in the catalog | desk stood down: no strategy has passed 
 [autopilot 13:05:51] autopilot started
 [autopilot 13:07:31] autopilot started
+[autopilot 13:16:35] autopilot started
+[autopilot 13:16:48] tick 1: research: 4/4 readers reported; evidence +0.00 | idea 'offline_mean_revert_13' refused: near-duplicate of offline_mean_revert_12 (max param difference 6.1% of r

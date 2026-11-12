@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 161 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 164 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -177,6 +177,58 @@ Known limits, stated plainly:
   `DEGRADED` and the cycle continues. Don't poll it on a short timer.
 - Agent verdicts are graded on price direction over the stated horizon. That is
   a coarse measure of a nuanced claim, and coarse honesty beats fine narrative.
+
+## What `./start.sh` actually starts
+
+**One process.** Not a stack of services. There is no database, no queue, no
+worker, no broker bridge, no separate agent server — nothing to orchestrate.
+
+```
+./start.sh
+   └── python3 wand.py serve            ← the only process
+         ├── HTTP server        127.0.0.1:8787   (console + JSON API)
+         ├── autopilot thread  (optional clock, same process)
+         ├── research agents   (plain HTTPS calls, same process)
+         ├── strategy gate     (backtests in-process)
+         ├── risk engine + ledger (in-process, files on disk)
+         └── chart renderer    (PIL, in-process)
+```
+
+Startup does exactly this, in order: preflight → prune old research snapshots →
+one HTTP listener → optionally one autopilot thread → tell the browser where to
+look.
+
+What it does **not** start, and why:
+
+| Not started | Why |
+|---|---|
+| database | state is JSON/JSONL files in `data/` |
+| redis / queue / worker | all work is a thread inside the one process |
+| broker / MT5 / exchange bridge | no live trading exists in this build |
+| LLM server | DeepSeek is an HTTPS API, called only when you have a key |
+| market-data daemon | fetched on demand from public endpoints |
+
+The only things it can spawn are (a) a detached copy of *itself* when you use
+`--bg` or `wand service start`, and (b) a headless browser for page captures —
+which is unused, since charts are rendered locally.
+
+Verify it yourself with the console running:
+
+```bash
+ss -ltnp | grep 8787        # one listener, one port
+python3 wand.py service status
+```
+
+### Only ever run one instance
+
+Two instances would mean two autopilots writing the same files. The launcher
+now checks ports 8787–8798 for a live MAGICWAND before starting and refuses with
+a pointer to the one already running. Stop it with:
+
+```bash
+python3 wand.py service stop     # background mode
+# or Ctrl-C in the terminal that owns it
+```
 
 ## Your data is local, and it is not lost
 

@@ -124,3 +124,72 @@ class TestStateFile(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestInstanceDetection(unittest.TestCase):
+    """A second instance is almost always a mistake: two autopilots writing the
+    same files. The launcher must notice and refuse instead of starting another.
+    """
+
+    @staticmethod
+    def _find():
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "mw_launcher", str(Path(__file__).resolve().parents[1] / "magicwand-launcher.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.find_instances
+
+    def test_detects_a_real_instance(self):
+        """Point it at this test's own HTTP server and it must find it."""
+        import http.server
+        import json
+        import threading
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                return
+            def do_GET(self):
+                body = json.dumps({"ok": True, "app": "magicwand"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        try:
+            found = self._find()("127.0.0.1", range(port, port + 1))
+            self.assertEqual(found, [port])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_ignores_a_foreign_server(self):
+        """Something else on the port must not be mistaken for us."""
+        import http.server
+        import threading
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                return
+            def do_GET(self):
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            self.assertEqual(self._find()("127.0.0.1", range(port, port + 1)), [])
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_empty_range_when_nothing_listening(self):
+        self.assertEqual(self._find()("127.0.0.1", range(18600, 18610)), [])

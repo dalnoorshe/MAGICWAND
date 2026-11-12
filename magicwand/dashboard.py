@@ -476,7 +476,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(storage_report(self.root))
         elif path == "/api/health":
             import os
-            self._json({"ok": True, "time": iso(utcnow()),
+            self._json({"ok": True, "app": "magicwand", "time": iso(utcnow()),
                         "has_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
                         "offline": self.offline})
         else:

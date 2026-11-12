@@ -39,8 +39,8 @@ from .indicators import atr as atr_ind
 from .ledger import Ledger
 from .llm import DeepSeekClient, fake_proposal
 from .reflect import PolicyStore, reflect_and_persist
-from .propose import (MAX_PROPOSALS_PER_DAY, StrategyRegistry, proposals_today,
-                      propose, validate)
+from .propose import (StrategyRegistry, check_novelty, propose,
+                      validate)
 
 
 @dataclass
@@ -132,21 +132,56 @@ def _manage_desk(cfg: Config, desk: AgentDesk, bars: list[Bar],
                                f"({t.return_pct:+.2%})")
 
 
+def _prior_proposals(ledger: Ledger) -> list[dict]:
+    """Every strategy idea tried so far, newest last. Used to demand novelty.
+
+    Note what this is NOT: a cap. Autonomy never runs out of attempts. It runs
+    out of *untried ideas*, which is a different and honest limit — the system
+    is told what it already tried and must go somewhere else.
+    """
+    out = []
+    for e in ledger.entries():
+        if e.get("kind") != "proposal":
+            continue
+        p = e.get("payload", {}) or {}
+        spec = p.get("spec") or {}
+        if spec:
+            out.append({
+                "name": spec.get("name"), "family": spec.get("family"),
+                "params": spec.get("params") or {},
+                "fingerprint": spec.get("fingerprint", ""),
+            })
+    return out
+
+
 def _maybe_propose(cfg: Config, client: DeepSeekClient, ledger: Ledger,
                    symbol: str, market_context: str, root: Path,
                    rep: TickReport, offline: bool = False,
                    blacklist: Optional[list[str]] = None) -> Optional[dict]:
-    """Ask for a new strategy, validate it, register it only if it passes."""
-    if proposals_today(ledger) >= MAX_PROPOSALS_PER_DAY:
-        rep.notes.append(f"proposal budget used ({MAX_PROPOSALS_PER_DAY}/day)")
-        return None
+    """Ask for a new strategy, validate it, register it only if it passes.
+
+    There is no attempt cap. Unlimited attempts on a fixed schedule, bounded by
+    novelty instead of by a counter — so autonomy cannot quietly switch itself
+    off after N tries the way CHIMERA's mutation budget does.
+    """
+    prior = _prior_proposals(ledger)
     try:
         spec = propose(client, symbol=symbol, market_context=market_context,
                        proposer_fake=fake_proposal if offline else None,
-                       blacklist=blacklist)
+                       blacklist=blacklist, prior=prior)
     except Exception as e:  # noqa: BLE001 - a bad proposal must not stop the runner
         ledger.append("proposal", {"ok": False, "error": str(e)[:400]})
         rep.notes.append(f"proposal rejected before validation: {e}")
+        return None
+
+    ok, why = check_novelty(spec, prior)
+    if not ok:
+        ledger.append("proposal", {
+            "ok": False, "spec": spec.to_dict(),
+            "summary": f"refused: {why}",
+            "novelty": False,
+        })
+        rep.notes.append(f"idea '{spec.name}' refused: {why}")
         return None
 
     bars = data_mod.fetch(cfg.market.exchange, spec.symbol or symbol,
@@ -175,7 +210,7 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
          subreddit: str = "solana",
          snapshot: Optional[research_mod.MarketSnapshot] = None,
          offline: bool = False, allow_stale_strategy: bool = False,
-         reflect_enabled: bool = True) -> TickReport:
+         reflect_enabled: bool = True, vision: bool = True) -> TickReport:
     root = Path(root)
     ledger = Ledger(root / cfg.ledger.path)
     symbol = cfg.market.symbol
@@ -212,7 +247,11 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
                 base, subreddit=subreddit, price=price, cache_dir=str(root))
     cycle = research_loop.run_cycle(
         cfg, client, price=price, atr=atr, symbol=symbol, subreddit=subreddit,
-        dcfg=None, root=root, snapshot=snapshot, ledger=ledger)
+        dcfg=None, root=root, snapshot=snapshot, ledger=ledger,
+        # Always render the chart (local + free); the agent degrades honestly
+        # when the model cannot actually see it.
+        vision=vision,
+        bars=bars, chart_title=f"{symbol} {cfg.market.timeframe}")
     rep.research_decision = cycle.report.decision
     rep.notes.append(f"research: {cycle.report.summary}")
 
@@ -317,7 +356,8 @@ def _spec_from_dict(d: dict):
 def run(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
         root: str | Path = ".", interval: int = 300, max_ticks: int = 0,
         propose_enabled: bool = True, subreddit: str = "solana",
-        offline: bool = False, reflect_enabled: bool = True) -> int:
+        offline: bool = False, reflect_enabled: bool = True,
+        vision: bool = True) -> int:
     """The unattended loop. Ctrl-C to stop; state survives restarts."""
     print(f"MAGICWAND autonomous runner — {cfg.market.symbol} @ {cfg.market.timeframe}")
     print(f"  interval {interval}s   desk enabled: {dcfg.enabled}   "
@@ -329,7 +369,8 @@ def run(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
         try:
             rep = tick(cfg, client, dcfg, root=root,
                        propose_enabled=propose_enabled, subreddit=subreddit,
-                       offline=offline, reflect_enabled=reflect_enabled)
+                       offline=offline, reflect_enabled=reflect_enabled,
+                       vision=vision)
             stamp = utcnow().strftime("%H:%M:%S")
             print(f"[{stamp}] price {rep.price:.4f}  desk {rep.desk_equity:.2f}  "
                   f"research {rep.research_decision or '-'}")

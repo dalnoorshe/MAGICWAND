@@ -1,3 +1,18 @@
 [autopilot 09:24:37] autopilot started
 [autopilot 09:24:46] tick 1: research: 3/4 readers reported; 1 degraded; evidence -0.50; VETO by derivatives, news, onchain | proposal budget used (4/day) | desk stood down: research veto b
 [autopilot 09:25:56] tick 2: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:27:06] tick 3: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:28:15] tick 4: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:29:25] tick 5: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:29:47] autopilot started
+[autopilot 09:29:56] tick 1: research: 3/4 readers reported; 1 degraded; evidence -0.50; VETO by derivatives, news, onchain | proposal budget used (4/day) | desk stood down: research veto b
+[autopilot 09:31:39] autopilot started
+[autopilot 09:31:49] tick 1: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:32:11] autopilot started
+[autopilot 09:32:21] tick 1: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:32:52] autopilot started
+[autopilot 09:33:03] tick 1: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | proposal budget used (4/day) | desk stood down: research veto by de
+[autopilot 09:36:38] autopilot started
+[autopilot 09:36:50] tick 1: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | strategy 'offline_mean_revert' rejected: REJECTED: not profitable a
+[autopilot 09:37:29] tick 2: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt
+[autopilot 09:38:09] tick 3: research: 4/4 readers reported; evidence -0.50; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert' refused: identical to a previous attempt

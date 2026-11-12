@@ -28,6 +28,7 @@ from .config import Config
 from .desk import AgentDesk, DeskConfig
 from .ledger import Ledger, grade_claim, make_claim, scorecard
 from .llm import DeepSeekClient
+from .vision_agent import read_chart
 
 
 # --------------------------------------------------------------------------
@@ -159,7 +160,10 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
               root: str | Path = ".", snapshot: Optional[research_mod.MarketSnapshot] = None,
               agents: Optional[list[str]] = None,
               now: Optional[datetime] = None,
-              ledger: Optional[Ledger] = None) -> ResearchCycle:
+              ledger: Optional[Ledger] = None,
+              vision: bool = False,
+              bars: Optional[list] = None,
+              chart_title: str = "") -> ResearchCycle:
     root = Path(root)
     now = now or utcnow()
     symbol = symbol or cfg.market.symbol
@@ -175,7 +179,23 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
 
     track = agent_track_record(ledger)
     verdicts = run_all(snapshot, client, agents=agents)
+
+    # The chart reader sees a picture of the same series. It fails soft: if the
+    # model cannot see (offline fake, no key), the verdict is degraded and the
+    # text readers carry on.
+    chart_verdict = None
+    if vision and bars:
+        chart_verdict = read_chart(
+            bars, client, title=chart_title or f"{symbol} {cfg.market.timeframe}",
+            symbol=symbol, save_dir=root / "data" / "charts")
+        if chart_verdict.error:
+            ledger.append("vision_degraded",
+                          {"agent": "charts", "error": chart_verdict.error[:300]})
+        else:
+            verdicts.append(chart_verdict)
+
     report = synthesize(verdicts, symbol, snapshot.ts, track=track)
+    report.chart = chart_verdict
     report.cost_usd = round(client.usage.cost_usd, 6)
     report.calls = client.usage.calls
 
@@ -195,6 +215,15 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
         "calls": report.calls,
         "cost_usd": report.cost_usd,
         "sources_missing": snapshot.missing(),
+        "chart": None if chart_verdict is None else {
+            "stance": chart_verdict.stance,
+            "confidence": chart_verdict.confidence,
+            "thesis": chart_verdict.thesis,
+            "observations": chart_verdict.observations,
+            "image_path": chart_verdict.image_path,
+            "injected_text_seen": chart_verdict.injected_text_seen,
+            "error": chart_verdict.error,
+        },
         "agents": [{
             "agent": v.agent,
             "stance": v.stance,

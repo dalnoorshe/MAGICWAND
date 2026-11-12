@@ -39,7 +39,68 @@ from .strategy import CATALOG, build_parameterised
 MIN_BARS = 200
 MIN_TRADES = 8
 HOLDOUT_FRACTION = 0.30        # last 30% of bars are never used for the claim
-MAX_PROPOSALS_PER_DAY = 4      # anti-cherry-picking budget
+
+# Degenerate-parameter-space detector.
+#
+# There is deliberately NO cap on how many strategies may be proposed: a
+# per-day cap makes autonomy stop working (the CHIMERA lesson), and a lifetime
+# cap makes it stop working permanently. What actually needs bounding is doing
+# the SAME thing forever. So the gate is novelty, not count:
+#   * an identical fingerprint is refused outright
+#   * a parameter vector too close to a prior attempt is refused as "near
+#     duplicate", so the search must explore rather than micro-tune one corner
+NEAR_DUPLICATE_RLIMIT = 0.10   # max per-parameter difference, as a share of its range
+
+
+def _vec(spec: "StrategySpec", keys: list[str]) -> list[float]:
+    return [float(spec.params.get(k, 0.0)) for k in keys]
+
+
+def _distance(a: list[float], b: list[float]) -> float:
+    """Chebyshev distance in range-normalised space.
+
+    "Same idea" means every parameter is close, not that the vector is short.
+    Euclidean distance wrongly treats two ideas that differ a lot on one axis
+    as far apart in every direction; Chebyshev asks the question we mean: is
+    there ANY parameter whose value is meaningfully different?
+    """
+    if not a or len(a) != len(b):
+        return float("inf")
+    return max(abs(x - y) for x, y in zip(a, b))
+
+
+def normalised_distance(spec: "StrategySpec", prior: dict) -> float:
+    """Distance in range-normalised space between two proposals."""
+    spec_def = CATALOG.get(spec.family) or {}
+    ranges = spec_def.get("params") or {}
+    keys = [k for k in sorted(ranges) if k in spec.params]
+    if not keys:
+        return 0.0 if spec.fingerprint() == prior.get("fingerprint") else float("inf")
+    a, b = [], []
+    for k in keys:
+        lo, hi, _ = ranges[k]
+        span = (hi - lo) or 1.0
+        a.append(float(spec.params[k]) / span)
+        pv = (prior.get("params") or {}).get(k)
+        b.append(float(pv) / span if pv is not None else 0.0)
+    return _distance(a, b)
+
+
+def check_novelty(spec: "StrategySpec", prior: list[dict]) -> tuple[bool, str]:
+    """Refuse duplicates and near-duplicates. Returns (ok, reason)."""
+    fp = spec.fingerprint()
+    for p in prior:
+        if p.get("fingerprint") == fp:
+            return False, (f"identical to a previous attempt ({p.get('name')})")
+    for p in prior:
+        if p.get("family") != spec.family:
+            continue
+        d = normalised_distance(spec, p)
+        if d < NEAR_DUPLICATE_RLIMIT:
+            return False, (f"near-duplicate of {p.get('name')} (max param "
+                           f"difference {d:.1%} of range < "
+                           f"{NEAR_DUPLICATE_RLIMIT:.0%}); explore elsewhere")
+    return True, "novel"
 
 
 # --------------------------------------------------------------------------
@@ -57,8 +118,20 @@ class StrategySpec:
     proposed_by: str = "agent"
     ts: str = ""
 
+    def fingerprint(self) -> str:
+        """Stable identity of the IDEA: family + normalised parameters."""
+        import hashlib
+        import json as _json
+        key = _json.dumps({"family": self.family,
+                           "params": {k: round(float(v), 6) if isinstance(v, (int, float)) else v
+                                      for k, v in sorted(self.params.items())}},
+                          sort_keys=True)
+        return hashlib.sha256(key.encode()).hexdigest()[:16]
+
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["fingerprint"] = self.fingerprint()
+        return d
 
 
 @dataclass
@@ -154,7 +227,8 @@ def parse_proposal(raw: str, symbol: str = "SOL-USD",
 
 def propose(client: DeepSeekClient, symbol: str = "SOL-USD",
             market_context: str = "",
-            proposer_fake=None, blacklist: Optional[list[str]] = None) -> StrategySpec:
+            proposer_fake=None, blacklist: Optional[list[str]] = None,
+            prior: Optional[list[dict]] = None) -> StrategySpec:
     """Ask the model for ONE strategy. Blacklisted families are refused."""
     """Ask the model for ONE strategy. Returns a validated spec or raises."""
     bl = set(blacklist or [])
@@ -168,6 +242,12 @@ def propose(client: DeepSeekClient, symbol: str = "SOL-USD",
         "Propose exactly one strategy as the JSON object described. "
         "Be genuine: pick the family whose mechanism you actually believe fits "
         "this market, and justify it in `hypothesis`.")
+    if prior:
+        tried = "\n".join(
+            f"  - {p.get('name')} ({p.get('family')}) {p.get('params')}"
+            for p in prior[-12:])
+        user += ("\n\nAlready tried (do NOT repeat these or near-neighbours; a "
+                 "near-duplicate is refused):\n" + tried)
     if proposer_fake is not None and client.fake is not None:
         raw = proposer_fake(_PROPOSAL_SYSTEM, user)
     else:

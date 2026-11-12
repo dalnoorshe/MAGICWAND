@@ -56,7 +56,7 @@ class Usage:
 
 
 @dataclass
-class DeepSeekClient:
+class DeepSeekClient:  # noqa: D101
     model: str = "deepseek-flash"
     api_key: Optional[str] = None
     max_calls_per_day: int = 400
@@ -75,6 +75,10 @@ class DeepSeekClient:
                 "no DeepSeek API key. Set DEEPSEEK_API_KEY (BYOK), or run with "
                 "--offline to use the deterministic fake model.")
         return k
+
+    def vision_available(self) -> bool:
+        """Vision needs the real API; the offline fake cannot see images."""
+        return self.fake is None and bool(self.api_key or os.environ.get("DEEPSEEK_API_KEY"))
 
     def available(self) -> bool:
         return bool(self.fake is not None or self.api_key or os.environ.get("DEEPSEEK_API_KEY"))
@@ -101,7 +105,13 @@ class DeepSeekClient:
 
     def chat(self, system: str, user: str, temperature: float = 0.3,
              max_tokens: int = 1200, json_mode: bool = True,
-             retries: int = 2) -> str:
+             retries: int = 2, images: Optional[list] = None) -> str:
+        """One completion. `images` is a list of objects with a `data_url`."""
+        if images:
+            return self.chat_vision(system=system, user=user, images=images,
+                                    temperature=temperature,
+                                    max_tokens=max_tokens,
+                                    json_mode=json_mode, retries=retries)
         self._check_budget()
         if self.fake is not None:
             text = self.fake(system, user)
@@ -140,6 +150,74 @@ class DeepSeekClient:
                 if attempt < retries:
                     time.sleep(2.0 * (attempt + 1))
         raise LLMError(f"DeepSeek request failed after {retries + 1} attempts: {last}")
+
+
+# DeepSeek resizes every image so that it costs at most 1024 tokens. We bill
+# the worst case so budgeting can never surprise the operator.
+IMAGE_TOKENS_MAX = 1024
+
+
+def chat_vision(self: DeepSeekClient, system: str, user: str,
+                images: list, temperature: float = 0.2,
+                max_tokens: int = 1100, json_mode: bool = True,
+                retries: int = 1) -> str:
+    """Send text + images. Images are supported in USER messages only."""
+    self._check_budget()
+    if not images:
+        return self.chat(system, user, temperature=temperature,
+                         max_tokens=max_tokens, json_mode=json_mode)
+
+    if self.fake is not None:
+        # The offline model cannot see. It says so rather than pretending.
+        text = self.fake(system, user)
+        try:
+            obj = json.loads(text)
+            obj.setdefault("warnings", []).append(
+                "offline fake model: the image was NOT actually inspected")
+            text = json.dumps(obj)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        self.usage.calls += 1
+        self.usage.add(0, 0, self.model)
+        self.usage.prompt_tokens += IMAGE_TOKENS_MAX * len(images)
+        return text
+
+    key = self._key()
+    content: list[dict] = [{"type": "text", "text": user}]
+    for img in images:
+        content.append({"type": "image_url",
+                        "image_url": {"url": img.data_url, "detail": "high"}})
+    body: dict[str, Any] = {
+        "model": self.model,
+        "messages": [
+            {"role": "system", "content": system},   # text only: images in
+            {"role": "user", "content": content},    # system msgs are a 400
+        ],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+
+    last: Optional[Exception] = None
+    for attempt in range(retries + 1):
+        try:
+            raw = _post_json(API_URL, body, key, self.timeout)
+            choices = raw.get("choices") or []
+            if not choices:
+                raise LLMError(f"empty choices: {str(raw)[:200]}")
+            text = choices[0].get("message", {}).get("content", "") or ""
+            u = raw.get("usage", {}) or {}
+            pt = int(u.get("prompt_tokens", 0))
+            self.usage.add(pt, int(u.get("completion_tokens", 0)), self.model)
+            return text
+        except (LLMError, OSError, TimeoutError) as e:
+            last = e
+            self.usage.errors += 1
+            if attempt < retries:
+                time.sleep(2.0 * (attempt + 1))
+    raise LLMError(f"DeepSeek vision request failed after {retries + 1} attempts: {last}")
 
 
 def _post_json(url: str, body: dict, key: str, timeout: float) -> dict:
@@ -186,17 +264,24 @@ def fake_proposal(system: str, user: str) -> str:
             family = "mean_revert"
         elif "breakout" in user.lower() or "high" in user.lower():
             family = "breakout"
+    # Vary with how many ideas have already been tried, so the offline model
+    # keeps producing GENUINELY NEW proposals instead of the same one forever.
+    # The novelty gate would refuse a repeat, which is correct but makes an
+    # offline demo look stalled.
+    tried = user.count("  - ")
+    bump = (tried % 8) * 24
     if family == "mean_revert":
-        params = {"slow": 30, "z_entry": 2.0, "stop_atr": 2.0,
-                  "target_atr": 3.0, "max_hold_bars": 48}
+        params = {"slow": 20 + bump, "z_entry": 1.5 + 0.2 * (tried % 5),
+                  "stop_atr": 2.0, "target_atr": 3.0, "max_hold_bars": 48}
     elif family == "breakout":
-        params = {"slow": 24, "stop_atr": 2.0, "target_atr": 4.0,
+        params = {"slow": 16 + bump, "stop_atr": 2.0, "target_atr": 4.0,
                   "max_hold_bars": 48}
     else:
-        params = {"fast": 12, "slow": 48, "stop_atr": 2.0,
-                  "target_atr": 4.0, "max_hold_bars": 72}
+        params = {"fast": 8 + (tried % 6) * 2, "slow": 24 + bump,
+                  "stop_atr": 2.0, "target_atr": 4.0, "max_hold_bars": 72}
+    family = family  # kept explicit for readability
     return json.dumps({
-        "name": f"offline_{family}",
+        "name": f"offline_{family}_{tried}",
         "hypothesis": ("offline placeholder: testing whether this family's "
                        "mechanism survives realistic and doubled costs"),
         "family": family,
@@ -235,3 +320,6 @@ def fake_canned(system: str, user: str) -> str:
         }],
         "warnings": ["this is the deterministic offline model, not DeepSeek"],
     })
+
+
+DeepSeekClient.chat_vision = chat_vision  # type: ignore[attr-defined]

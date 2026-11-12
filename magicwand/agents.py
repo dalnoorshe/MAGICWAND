@@ -66,6 +66,11 @@ class AgentVerdict:
     claims: list[Claim] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     error: str = ""
+    # Vision provenance: which image, from where, and the model's reading of it
+    image_path: str = ""
+    image_source: str = ""
+    observations: list[str] = field(default_factory=list)
+    injected_text_seen: bool = False
 
     @property
     def trusted(self) -> bool:
@@ -86,6 +91,7 @@ class ResearchReport:
     summary: str = ""
     cost_usd: float = 0.0
     calls: int = 0
+    chart: Optional[AgentVerdict] = None
 
     @property
     def is_veto(self) -> bool:

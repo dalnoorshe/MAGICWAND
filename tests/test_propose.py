@@ -373,3 +373,68 @@ class TestAutonomousTradeBranch(unittest.TestCase):
             desk = AgentDesk(cfg, DeskConfig(enabled=True,
                                              tier=RiskTier.PAPER_DESK), root=d)
             self.assertIsNone(desk.state.position)
+
+
+class TestNoveltyNotCap(unittest.TestCase):
+    """Autonomy must never run out of attempts — only out of untried ideas.
+
+    This is the deliberate answer to CHIMERA's mutation budget, where a fixed
+    cap of 50 means a long-running engagement silently loses the ability to
+    evolve. Here there is no counter: a duplicate is refused, a new idea is not.
+    """
+
+    def _spec(self, name, family, params):
+        return StrategySpec(name=name, hypothesis="h", family=family,
+                            params=params, symbol="SOL-USD", ts=utcnow().isoformat())
+
+    def test_identical_proposal_refused(self):
+        from magicwand.propose import check_novelty
+        a = self._spec("a", "sma_trend", {"fast": 10, "slow": 40})
+        b = self._spec("b", "sma_trend", {"fast": 10, "slow": 40})
+        ok, why = check_novelty(b, [a.to_dict()])
+        self.assertFalse(ok)
+        self.assertIn("identical", why)
+
+    def test_near_duplicate_refused(self):
+        from magicwand.propose import check_novelty
+        a = self._spec("a", "sma_trend", {"fast": 10, "slow": 40})
+        # Change slow by <10% of its [5,400] range: same idea.
+        near = self._spec("n", "sma_trend", {"fast": 10, "slow": 44})
+        ok, why = check_novelty(near, [a.to_dict()])
+        self.assertFalse(ok)
+        self.assertIn("near-duplicate", why)
+
+    def test_genuinely_different_idea_accepted(self):
+        from magicwand.propose import check_novelty
+        a = self._spec("a", "sma_trend", {"fast": 10, "slow": 40})
+        far = self._spec("f", "sma_trend", {"fast": 100, "slow": 200})
+        ok, why = check_novelty(far, [a.to_dict()])
+        self.assertTrue(ok, why)
+
+    def test_other_family_accepted(self):
+        from magicwand.propose import check_novelty
+        a = self._spec("a", "sma_trend", {"fast": 10, "slow": 40})
+        other = self._spec("o", "breakout", {"slow": 20})
+        self.assertTrue(check_novelty(other, [a.to_dict()])[0])
+
+    def test_no_attempt_cap_in_the_runner(self):
+        """There must be no per-day or lifetime multiplier left in the loop."""
+        import inspect
+        from magicwand import runner
+        src = inspect.getsource(runner)
+        self.assertNotIn("MAX_PROPOSALS_PER_DAY", src)
+        self.assertIn("check_novelty", src)
+
+    def test_many_attempts_all_allowed_when_each_is_new(self):
+        from magicwand.propose import check_novelty
+        prior: list[dict] = []
+        accepted = 0
+        # Steps of ~6% of the 395-wide parameter range: each is genuinely new
+        # under a 10% Chebyshev threshold, and there is no upper limit on count.
+        for slow in range(20, 300, 24):
+            spec = self._spec(f"n{slow}", "sma_trend", {"fast": 8, "slow": slow})
+            ok, _ = check_novelty(spec, prior)
+            if ok:
+                prior.append(spec.to_dict())
+                accepted += 1
+        self.assertGreaterEqual(accepted, 6, "novelty gate is too aggressive")

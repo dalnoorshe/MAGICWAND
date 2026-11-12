@@ -128,6 +128,17 @@
     <div id="deskbody" class="dimmer">no desk state</div>
   </section>
 
+  <section class="card span-12">
+    <h2>Chart the agents see <span class="dimmer" id="chartMeta"></span></h2>
+    <div style="display:flex;gap:14px;flex-wrap:wrap">
+      <div style="flex:1;min-width:320px">
+        <img id="chartImg" alt="rendered chart" style="width:100%;border-radius:6px;border:1px solid #242a36;display:none">
+        <div id="chartNone" class="empty">no chart rendered yet — the vision reader draws one on each tick</div>
+      </div>
+      <div id="chartVerdict" style="flex:1;min-width:280px"></div>
+    </div>
+  </section>
+
   <section class="card span-6">
     <h2>Equity</h2>
     <svg id="chart" viewBox="0 0 600 120" preserveAspectRatio="none"></svg>
@@ -323,6 +334,43 @@ function renderFeed(recent) {
   }).join("");
 }
 
+function renderChart(s) {
+  const meta = $("chartMeta"), img = $("chartImg"), none = $("chartNone");
+  const v = $("chartVerdict");
+  const chart = s.chart;
+  const research = s.research || {};
+  const cv = research.chart;
+  if (!chart) {
+    img.style.display = "none"; none.style.display = "block";
+    meta.textContent = "";
+  } else {
+    none.style.display = "none";
+    img.style.display = "block";
+    // cache-bust so a new render replaces the old image
+    img.src = "/api/chart?v=" + encodeURIComponent(chart.file || Date.now());
+    meta.textContent = `${chart.kb} KB · ${chart.at ? new Date(chart.at).toLocaleTimeString() : ""}`;
+  }
+  if (!cv) {
+    v.innerHTML = '<div class="empty">the vision reader has not run yet</div>';
+    return;
+  }
+  if (cv.error) {
+    v.innerHTML = `<div class="agent err"><div class="row"><b>charts</b>
+      <span class="badge b-warn">degraded</span></div>
+      <div class="thesis">${esc(cv.error)}</div></div>`;
+    return;
+  }
+  v.innerHTML = `<div class="agent ${esc(cv.stance)}">
+      <div class="row"><b>charts (vision)</b>
+        <span><span class="badge ${cv.stance === "veto" ? "b-bad" : cv.stance === "support" ? "b-good" : "b-dim"}">${esc(cv.stance)}</span>
+        <span class="dim mono"> conf ${Number(cv.confidence||0).toFixed(2)}</span></span></div>
+      <div class="thesis">${esc(cv.thesis || "")}</div>
+      ${cv.injected_text_seen ? '<div class="bad" style="margin-top:6px">⚠ image contained instructions — ignored, flagged</div>' : ""}
+    </div>
+    ${(cv.observations || []).length ? '<ul style="margin:8px 0 0 16px;padding:0" class="dim">'
+      + cv.observations.map(o => `<li>${esc(o)}</li>`).join("") + "</ul>" : ""}`;
+}
+
 function renderAutopilot(a) {
   const badge = $("autobadge");
   const body = $("autobody");
@@ -389,6 +437,7 @@ async function refresh() {
     renderStrategies(s.strategies);
     renderFeed(s.recent);
     renderAutopilot(s.autopilot);
+    renderChart(s);
   } catch (e) {
     toast("dashboard error: " + e.message);
   }

@@ -134,6 +134,7 @@ def build_state(root: Path, cfg: Config) -> dict:
             "recent_trades": desk_trades[-12:],
         },
         "research": last_research,
+        "chart": _latest_chart(data),
         "proposal": last_proposal,
         "reflection": mem.get("last_reflection"),
         "memory": {
@@ -158,6 +159,23 @@ def build_state(root: Path, cfg: Config) -> dict:
         "service": service,
         "autopilot": autopilot_raw,
     }
+
+
+def _latest_chart(data: Path) -> Optional[dict]:
+    d = data / "charts"
+    if not d.exists():
+        return None
+    files = sorted(d.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not files:
+        return None
+    f = files[0]
+    return {"file": f.name, "kb": round(f.stat().st_size / 1024, 1),
+            "at": iso(dt_from_ts(f.stat().st_mtime))}
+
+
+def dt_from_ts(ts: float):
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 
 def _recent_trades(desk: dict) -> list[dict]:
@@ -230,7 +248,10 @@ def _tick_with_client(root: Path, cfg: Config, offline: bool = True,
     dcfg = DeskConfig(enabled=True, tier=eff_tier,
                       min_confidence=policy.effective()["min_confidence"])
     rep = tick(cfg, client, dcfg, root=root, offline=offline,
-               propose_enabled=True, reflect_enabled=True)
+               propose_enabled=True, reflect_enabled=True,
+               # Always render the chart; the agent degrades honestly when the
+               # model cannot actually see it.
+               vision=True)
     return rep.to_dict()
 
 
@@ -305,6 +326,19 @@ class Handler(BaseHTTPRequestHandler):
             self._html(_load_page())
         elif path == "/api/state":
             self._json(build_state(self.root, self.cfg))
+        elif path == "/api/chart":
+            charts = sorted((self.root / "data" / "charts").glob("*.png"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+            if not charts:
+                self._json({"error": "no chart rendered yet"}, 404)
+                return
+            body = charts[0].read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
         elif path == "/api/health":
             import os
             self._json({"ok": True, "time": iso(utcnow()),

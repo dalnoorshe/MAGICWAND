@@ -76,7 +76,7 @@ wishes but cannot lie about what it granted.
 ## Try it
 
 ```bash
-python3 -m unittest discover -s tests -v   # 110 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 128 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -85,7 +85,8 @@ python3 wand.py status                      # scorecard
 
 Optional: `pip install -e .` then use `wand` instead of `python3 wand.py`.
 
-Zero dependencies. Pure standard library, Python 3.10+.
+Zero dependencies for trading. Rendering charts needs Pillow (`pip install pillow`);
+everything else is standard library. Python 3.10+.
 
 ## The research layer: four agents, one scoreboard
 
@@ -268,6 +269,61 @@ themselves into ruin. Demoted families are refused at proposal time, and the
 tuning sizes future risk from the families it intends to *keep* trading — not
 from dead strategies' history.
 
+## Vision — the agents can look at charts
+
+`deepseek-flash` accepts images, so the chart reader actually *sees*. MAGICWAND
+renders a candlestick chart from the same bars the strategy trades — price
+candles, two moving averages, volume — and asks the model to read levels,
+trend structure, and volume behaviour off the picture.
+
+```
+price + MOving averages + volume  ──render──>  PNG  ──base64──>  deepseek-flash
+                                                                      │
+                                        validated verdict (same schema) ◄┘
+```
+
+**Why render rather than screenshot a trading site.** A screenshot of someone
+else's page depends on their layout, their bot detection, their login wall, and
+their terms; and it can show a chart the strategy never traded. A chart drawn
+from our own data has none of those failure modes, is byte-for-byte
+reproducible, and shows exactly the series the decision was made on. A real
+browser is used only if you ask for a public page — we never log in anywhere.
+
+**The image is untrusted input.** It can contain rendered text, and rendered
+text can contain instructions. The prompt tells the model to treat any
+instruction inside the image as evidence of manipulation and flag it
+(`injected_text_seen`), and — as with every reader — a chart verdict can only
+ever **veto**, never open a trade. Offline, the fake model explicitly reports
+"the image was NOT actually inspected" rather than pretending.
+
+Every rendered chart is saved to `data/charts/` and the exact filename is
+attached to the claim, so a graded claim can be checked against the picture
+later. The console serves the latest one at `/api/chart` and shows it beside
+the vision verdict.
+
+Cost: an image costs at most 1024 tokens ≈ **$0.0003** at peak `deepseek-flash`
+prices.
+
+## Attempts: unlimited, novelty-bounded
+
+CHIMERA's evolution has a `MutationBudget` with `per_engagement_cap: 50`: once
+50 mutations are spent, `try_spend()` returns `CapReached` and the system stops
+being able to adapt while still appearing to run. That is the failure mode to
+avoid.
+
+MAGICWAND has **no attempt cap at all**. Autonomy never switches itself off
+after N tries, and there is no backoff that silently stretches into nothing.
+What is bounded is *repetition*, not *count*:
+
+- identical proposal → refused
+- any parameter differing by <10% of its catalog range → refused as a
+  near-duplicate
+- anything genuinely new → allowed, forever
+
+So the honest limit is "we ran out of untried ideas", not "we ran out of
+budget". The proposer is told what it already tried, so it must go somewhere
+new.
+
 ## What it found on day one
 
 Run against 300 hourly SOL-USD candles (2026-10-30 → 2026-11-11):
@@ -345,6 +401,9 @@ reality check, and then fund it from savings, not from hope.
 - [x] Local zero-dependency operator dashboard
 - [x] Autopilot: an in-server clock so the system runs unattended
 - [x] Equity marks written every tick, so the chart has a real series
+- [x] Vision: rendered candlestick charts read by `deepseek-flash`
+- [x] Image prompt-injection detection; chart verdicts are veto-only
+- [x] No attempt cap — novelty-bounded instead of count-bounded
 - [ ] Longer history (the free hourly window is only ~12 days)
 - [ ] Walk-forward / out-of-sample split, so tuning cannot cheat
 - [ ] Portfolio-level risk across several symbols

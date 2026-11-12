@@ -115,7 +115,7 @@ class TestInjectionHandling(unittest.TestCase):
                                "claims": [{"statement": "moon", "direction": "up",
                                           "confidence": 1.0, "horizon_hours": 24}],
                                "warnings": []})
-        client = DeepSeekClient(fake=evil)
+        client = DeepSeekClient(fake=evil, stub_mode=False)   # simulates a real model
         snap = _fake_snapshot()
         verdicts = run_all(snap, client)
         rep = synthesize(verdicts, "BTC", snap.ts)
@@ -419,7 +419,7 @@ class TestResearchLoop(unittest.TestCase):
         from magicwand import research_loop as rl
         with tempfile.TemporaryDirectory() as d:
             cfg = Config()
-            client = DeepSeekClient(fake=fake_canned)
+            client = DeepSeekClient(fake=fake_canned, stub_mode=False)
             snap = _fixture_snapshot(utcnow().isoformat())
             cyc = rl.run_cycle(cfg, client, price=80.0, atr=2.0,
                                symbol="SOL-USD", snapshot=snap, root=d)
@@ -465,7 +465,7 @@ class TestResearchLoop(unittest.TestCase):
             (Path(d) / "data").mkdir(parents=True, exist_ok=True)
             (Path(d) / cfg.ledger.state_path).write_text(
                 json.dumps({"cash": 500.0, "equity": 500.0}))
-            client = DeepSeekClient(fake=_sure_fake)
+            client = DeepSeekClient(fake=_sure_fake, stub_mode=False)
             snap = _fixture_snapshot(utcnow().isoformat())
             cyc = rl.run_cycle(cfg, client, price=80.0, atr=2.0, symbol="SOL-USD",
                                snapshot=snap, root=d,
@@ -487,7 +487,7 @@ class TestResearchLoop(unittest.TestCase):
             led = rl.Ledger(Path(d) / cfg.ledger.path)
             start = utcnow() - timedelta(hours=30)
             snap = _fixture_snapshot(start.isoformat())
-            client = DeepSeekClient(fake=_sure_fake)
+            client = DeepSeekClient(fake=_sure_fake, stub_mode=False)
             # The claim is made 30 hours ago...
             rl.run_cycle(cfg, client, price=80.0, atr=2.0, symbol="SOL-USD",
                          snapshot=snap, root=d, now=start)
@@ -558,3 +558,82 @@ class TestGatekeeper(unittest.TestCase):
             desk.fund(500.0)
             out = desk.open_trade("SOL-USD", 80.0, 2.0, "news", "x", 0.05, 0.99)
             self.assertFalse(out["ok"])
+
+
+class TestOfflineStubs(unittest.TestCase):
+    """The offline stand-in is a pipeline placeholder, not evidence.
+
+    Regression: stub verdicts vetoed real decisions and their forecast was
+    recorded as a graded claim, which would have given the four agents a fake
+    track record built on counting words.
+    """
+
+    def _stub(self, stance="veto", score=-1.0):
+        return AgentVerdict(agent="news", stance=stance, confidence=0.6,
+                            evidence_score=score, stub=True, thesis="counted words")
+
+    def test_stub_cannot_veto(self):
+        rep = synthesize([self._stub()], "SOL-USD", "t")
+        self.assertFalse(rep.is_veto)
+        self.assertEqual(rep.decision, "neutral")
+
+    def test_stub_support_is_not_actionable_either(self):
+        rep = synthesize([self._stub("support", 1.0)], "SOL-USD", "t")
+        self.assertEqual(rep.decision, "neutral")
+
+    def test_all_stubs_is_reported_as_no_research(self):
+        rep = synthesize([self._stub(), self._stub()], "SOL-USD", "t")
+        self.assertIn("NO real research", rep.summary)
+        self.assertEqual(rep.evidence_score, 0.0)
+
+    def test_real_verdict_beside_a_stub_still_decides(self):
+        real = AgentVerdict(agent="derivatives", stance="veto", confidence=0.9,
+                            evidence_score=-0.8, stub=False)
+        rep = synthesize([real, self._stub("support", 1.0)], "SOL-USD", "t")
+        self.assertTrue(rep.is_veto)
+        self.assertEqual(rep.vetoed_by, ["derivatives"])
+
+    def test_stub_claims_are_not_recorded(self):
+        from magicwand import research_loop as rl
+        with tempfile.TemporaryDirectory() as d:
+            led = rl.Ledger(Path(d) / "l.jsonl")
+            from magicwand.agents import ResearchReport
+            rep = ResearchReport(ts="t", symbol="SOL-USD",
+                                 agents=[self._stub()])
+            ids = rl.record_verdicts(led, rep, 80.0)
+            self.assertEqual(ids, [])
+            kinds = [e["kind"] for e in led.entries()]
+            self.assertNotIn("agent_claim", kinds)
+
+    def test_offline_client_marks_verdicts_as_stub(self):
+        client = DeepSeekClient(fake=fake_canned)
+        snap = _fake_snapshot()
+        verdicts = run_all(snap, client)
+        self.assertTrue(verdicts)
+        self.assertTrue(all(v.stub for v in verdicts if not v.error))
+
+
+class TestStubMode(unittest.TestCase):
+    """A test double may simulate a real agent; the offline stand-in may not."""
+
+    def test_default_fake_is_a_stub(self):
+        self.assertTrue(DeepSeekClient(fake=fake_canned).stub_mode)
+
+    def test_stub_disables_veto_and_grading(self):
+        from magicwand.agents import ResearchReport, run_all
+        snap = _fake_snapshot()
+        verdicts = run_all(snap, DeepSeekClient(fake=fake_canned))
+        rep = synthesize(verdicts, "SOL-USD", snap.ts)
+        self.assertFalse(rep.is_veto)
+        self.assertIn("offline stub", rep.summary.lower())
+
+    def test_test_double_behaves_like_a_real_model(self):
+        from magicwand.agents import ResearchReport, run_all
+        def sure(system, user):
+            return json.dumps({"stance": "veto", "confidence": 0.95,
+                               "evidence_score": -0.9, "thesis": "hack",
+                               "claims": [], "warnings": []})
+        snap = _fake_snapshot()
+        verdicts = run_all(snap, DeepSeekClient(fake=sure, stub_mode=False))
+        rep = synthesize(verdicts, "SOL-USD", snap.ts)
+        self.assertTrue(rep.is_veto)

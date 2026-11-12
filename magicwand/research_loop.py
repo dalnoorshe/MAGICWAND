@@ -78,6 +78,8 @@ def record_verdicts(ledger: Ledger, report: ResearchReport, price: float,
     when = when or utcnow()
     ids: list[str] = []
     for v in report.agents:
+        if v.stub:
+            continue          # a placeholder must not enter the track record
         if not v.trusted or not v.claims:
             continue
         # Use the agent's first concrete forecast; that is what gets graded.
@@ -215,6 +217,7 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
         "calls": report.calls,
         "cost_usd": report.cost_usd,
         "sources_missing": snapshot.missing(),
+        "stub": bool(verdicts) and all(getattr(v, "stub", False) for v in verdicts),
         "chart": None if chart_verdict is None else {
             "stance": chart_verdict.stance,
             "confidence": chart_verdict.confidence,

@@ -66,6 +66,10 @@ class DeepSeekClient:  # noqa: D101
     timeout: float = 90.0
     # A deterministic offline stand-in, used by tests and by `--offline`.
     fake: Optional[Any] = None
+    # Whether verdicts from `fake` are PLACEHOLDERS (the offline stand-in) or a
+    # test double standing in for a real model. Placeholders can never veto and
+    # are never graded; test doubles behave like the real thing.
+    stub_mode: bool = True
     usage: Usage = field(default_factory=Usage)
     # Optional path to the console settings file. When set, a key saved through
     # the UI is used without any environment variable.

@@ -71,6 +71,10 @@ class AgentVerdict:
     image_source: str = ""
     observations: list[str] = field(default_factory=list)
     injected_text_seen: bool = False
+    # True when produced by the deterministic offline stand-in. A stub is a
+    # pipeline placeholder: it must never veto a trade, and its claims must
+    # never enter an agent's graded track record.
+    stub: bool = False
 
     @property
     def trusted(self) -> bool:
@@ -265,7 +269,12 @@ def run_agent(name: str, snap: MarketSnapshot, client: DeepSeekClient,
         return AgentVerdict(agent=name, error=f"budget: {e}")
     except LLMError as e:
         return AgentVerdict(agent=name, error=f"llm: {e}")
-    return parse_verdict(name, raw)
+    v = parse_verdict(name, raw)
+    v.stub = client.fake is not None and getattr(client, "stub_mode", True)
+    if v.stub:
+        v.warnings = list(v.warnings) + [
+            "OFFLINE STUB: not real analysis, excluded from decisions and grading"]
+    return v
 
 
 def run_all(snap: MarketSnapshot, client: DeepSeekClient,
@@ -309,7 +318,10 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
     open a position — that is the line that keeps an LLM out of the money path.
     """
     rep = ResearchReport(ts=ts, symbol=symbol, agents=verdicts)
-    trusted = [v for v in verdicts if v.trusted]
+    # Stubs are pipeline placeholders. Including them would let a keyword
+    # counter veto real trades and would pollute the agents' track records.
+    stubs = [v for v in verdicts if v.stub]
+    trusted = [v for v in verdicts if v.trusted and not v.stub]
     total_w = 0.0
     weighted = 0.0
     for v in trusted:
@@ -333,10 +345,18 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
         rep.decision = "neutral"
 
     n_ok = len(trusted)
-    n_err = len(verdicts) - n_ok
+    n_err = len(verdicts) - n_ok - len(stubs)
+    if stubs and n_ok == 0:
+        rep.decision = "neutral"
+        rep.summary = (f"offline stub model: {len(stubs)} placeholder reader(s) — "
+                       f"NO real research, no veto applied. Connect a DeepSeek "
+                       f"key for actual analysis.")
+        return rep
     bits = [f"{n_ok}/{len(verdicts)} readers reported"]
     if n_err:
         bits.append(f"{n_err} degraded")
+    if stubs:
+        bits.append(f"{len(stubs)} stub (ignored)")
     bits.append(f"evidence {rep.evidence_score:+.2f}")
     if rep.vetoed_by:
         bits.append(f"VETO by {', '.join(rep.vetoed_by)}")

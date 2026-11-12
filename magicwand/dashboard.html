@@ -332,11 +332,22 @@ function renderAgents(research) {
   if (!research) { box.innerHTML = '<div class="empty">no research cycle recorded yet</div>'; return; }
   $("researchTs").textContent = research.ts ? new Date(research.ts).toLocaleString() : "";
   const dec = research.decision || "neutral";
-  $("decision").innerHTML =
+  $("decision").innerHTML = (research.stub ? '<span class="badge b-warn">offline stub</span> ' : "") +
     `decision <b class="${dec === "veto" ? "bad" : dec === "support" ? "good" : "dim"}">${esc(dec.toUpperCase())}</b>` +
     ` · evidence <span class="mono">${(research.evidence_score ?? 0).toFixed(2)}</span>` +
     ` · readers <span class="dim">${esc(research.summary || "")}</span>`;
   const agents = research.agents || [];
+  if (research.stub) {
+    box.innerHTML = `<div class="agent err" style="border-left-color:#ffb020">
+      <div class="row"><b>OFFLINE STUB — no real analysis</b>
+        <span class="badge b-warn">placeholders</span></div>
+      <div class="thesis">These readers are the deterministic offline model: it
+        counts bull/bear words in the prompt. They do <b>not</b> veto and their
+        forecasts are excluded from the agents' track record. Connect a DeepSeek
+        key (Settings) to get real research.</div>
+    </div>`;
+    return;
+  }
   if (!agents.length) { box.innerHTML = '<div class="empty">no agent verdicts</div>'; return; }
   box.innerHTML = agents.map(a => {
     if (a.error) {

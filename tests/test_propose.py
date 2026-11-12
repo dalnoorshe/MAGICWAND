@@ -183,7 +183,7 @@ class TestRunner(unittest.TestCase):
             cfg = self._cfg(d)
             client = DeepSeekClient(fake=lambda s, u: json.dumps({
                 "stance": "neutral", "confidence": 0.3, "evidence_score": 0.0,
-                "thesis": "quiet", "claims": []}))
+                "thesis": "quiet", "claims": []}), stub_mode=False)
             dcfg = DeskConfig(enabled=True, tier=RiskTier.PAPER_DESK)
             rep = runner.tick(cfg, client, dcfg, root=d, propose_enabled=False,
                               snapshot=self._snapshot(utcnow().isoformat()))
@@ -201,7 +201,7 @@ class TestRunner(unittest.TestCase):
                                              {"holdout_return": 0.02}))
             veto_client = DeepSeekClient(fake=lambda s, u: json.dumps({
                 "stance": "veto", "confidence": 0.95, "evidence_score": -0.9,
-                "thesis": "hack", "claims": []}))
+                "thesis": "hack", "claims": []}), stub_mode=False)
             dcfg = DeskConfig(enabled=True, tier=RiskTier.PAPER_DESK)
             rep = runner.tick(cfg, veto_client, dcfg, root=d,
                               propose_enabled=False,
@@ -302,7 +302,7 @@ class TestAutonomousTradeBranch(unittest.TestCase):
             DeskConfig(enabled=True, autonomy_armed=True)
             neutral = DeepSeekClient(fake=lambda s_, u: json.dumps({
                 "stance": "neutral", "confidence": 0.2, "evidence_score": 0.0,
-                "thesis": "quiet", "claims": []}))
+                "thesis": "quiet", "claims": []}), stub_mode=False)
 
             import magicwand.runner as R
             orig = R._load_strategy
@@ -355,7 +355,7 @@ class TestAutonomousTradeBranch(unittest.TestCase):
                                      {"holdout_return": 0.02}))
             veto = DeepSeekClient(fake=lambda s_, u: json.dumps({
                 "stance": "veto", "confidence": 0.95, "evidence_score": -0.9,
-                "thesis": "hack", "claims": []}))
+                "thesis": "hack", "claims": []}), stub_mode=False)
             import magicwand.runner as R
             orig = R._load_strategy
             R._load_strategy = lambda cfg_, spec_dict: AlwaysEnter(cfg_.strategy)

@@ -380,6 +380,24 @@ setup; you never edit `.bashrc`.
 ./start.sh --bg            run detached (survives closing the terminal)
 ```
 
+### Offline mode is honest about being offline
+
+With no key connected the console runs a **deterministic stand-in model**. It is
+a pipeline placeholder: it counts bullish/bearish words in the prompt and does
+nothing else.
+
+Such verdicts are marked `stub` and therefore:
+
+- **never veto a trade** — a keyword counter must not suppress real decisions
+- **never enter an agent's graded track record** — otherwise your four readers
+  would earn a hit rate built on word counting
+- are shown in the console as *"OFFLINE STUB — no real analysis"* rather than a
+  confident VETO
+
+If you ever see an identical verdict repeated by all four readers, that is the
+telltale: a real model gives four different readings. Connect a key and each
+reader gets its own prompt and its own opinion.
+
 ### Connecting the APIs (in the UI)
 
 | API | How | Why |

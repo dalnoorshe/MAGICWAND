@@ -371,10 +371,22 @@ the stand-in model and shows a *"Connect DeepSeek to go live"* banner. Click
 **Settings → paste your key → Save → Test connection**. That is the entire
 setup; you never edit `.bashrc`.
 
+Saving the key takes effect **immediately** — no restart:
+
+- the terminal prints `key connected (sk-…) — mode is now LIVE`
+- `data/service.json` is updated
+- one research cycle runs in the background, so the console fills with real
+  verdicts within a few seconds instead of showing the old offline ones
+- the header badge switches from `offline` to `live model`
+
+If it does not, the most likely cause is a server started before the fix, or
+`--offline` in the command line.
+
 ```
-./start.sh                 console + browser, autopilot every 15 min
+./start.sh                 console + browser, autopilot every 15 min (live if a key exists)
 ./start.sh --no-browser    don't open a browser
-./start.sh --interval 0    start with the autopilot idle
+./start.sh --interval 0    start with the autopilot idle (manual ticks only)
+./start.sh --offline       force the stub model even if a key is connected
 ./start.sh --port 9000     different port
 ./start.sh --live          refuse to start without a connected key
 ./start.sh --bg            run detached (survives closing the terminal)

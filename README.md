@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 138 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 161 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -178,6 +178,75 @@ Known limits, stated plainly:
 - Agent verdicts are graded on price direction over the stated horizon. That is
   a coarse measure of a nuanced claim, and coarse honesty beats fine narrative.
 
+## Your data is local, and it is not lost
+
+Nothing is "cached in memory" that disappears when you close the app. Every
+decision is written to disk as it happens:
+
+| File | Holds | Pruned? |
+|---|---|---|
+| `data/ledger.jsonl` | **the record**: every research cycle, claim, grade, trade, veto | **never** |
+| `data/desk.json` | sandbox cash, open position, trade history | never |
+| `data/policy.json` | the evolved risk policy and tier | never |
+| `data/memory.json` | what reflection learned (demoted families, weights) | never |
+| `data/strategies.json` | gate-approved strategies | never |
+| `data/settings.json` | your API key (mode `0600`) | never |
+| `data/charts/*.png` | what the agent saw | newest 60 |
+| `data/snapshot_*.json` | research evidence per tick | newest 40 / 14 days |
+| `data/autopilot.json`, `server.log` | scheduler state and logs | never |
+
+Closing the terminal stops the *process*; it does not touch a byte of that.
+Reopening reads it back and continues — the ledger chain verifies itself on
+every load (`wand.py verify`).
+
+### There is no database and no cloud
+
+Not SQLite, not Postgres, not S3. `grep` the source: there is no database
+driver anywhere. Data is JSON and JSONL in the project folder, and the only
+outbound connections are to the public market-data APIs and to the DeepSeek API
+when you have connected a key. Nothing is uploaded, and no account is created.
+
+### Keeping it running after you close the terminal
+
+```bash
+./start.sh --bg          # detached: survives closing the terminal
+python3 wand.py service status
+python3 wand.py service stop
+python3 wand.py service log
+```
+
+For survival across **reboots**, install a user systemd unit:
+
+```bash
+python3 wand.py service autostart
+systemctl --user stop magicwand    # to turn it off
+```
+
+The background mode uses `setsid`/`start_new_session` and a pidfile, so the
+server is in its own session with no controlling terminal — closing the window
+cannot send it SIGHUP. (The agent sandbox this project was built in gives each
+command its own PID namespace with `--die-with-parent`, so detached survival
+could only be verified there by construction; on a normal desktop it behaves as
+described.)
+
+### Housekeeping and backups
+
+Old research snapshots are pruned automatically on every start (they are
+evidence, not state — the decision they supported is already in the ledger).
+Manual control:
+
+```bash
+python3 wand.py storage            # what is on disk, grouped, in KB
+python3 wand.py storage --prune    # delete old snapshots now
+python3 wand.py storage --backup   # write backups/magicwand-backup-*.tar.gz (0600)
+python3 wand.py storage --restore backups/magicwand-backup-XXXX.tar.gz --force
+```
+
+The console has the same two buttons — **Back up now** and **Prune old** — in
+the *Local storage* card, plus a live size breakdown. A backup archive contains
+your API key if one is saved, so it is created `0600` and stays on your disk;
+move or encrypt it yourself if you intend to take it anywhere.
+
 ## Run it: one command
 
 ```bash
@@ -199,6 +268,7 @@ setup; you never edit `.bashrc`.
 ./start.sh --interval 0    start with the autopilot idle
 ./start.sh --port 9000     different port
 ./start.sh --live          refuse to start without a connected key
+./start.sh --bg            run detached (survives closing the terminal)
 ```
 
 ### Connecting the APIs (in the UI)

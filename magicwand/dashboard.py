@@ -471,6 +471,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+        elif path == "/api/storage":
+            from .storage import storage_report
+            self._json(storage_report(self.root))
         elif path == "/api/health":
             import os
             self._json({"ok": True, "time": iso(utcnow()),
@@ -503,6 +506,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "reflection": ref.to_dict()})
             elif path == "/api/settings":
                 self._settings_post()
+            elif path == "/api/storage":
+                from .storage import backup, housekeep
+                b = self._body()
+                action = str(b.get("action", "prune"))
+                if action == "backup":
+                    p = backup(self.root)
+                    Ledger(self.root / self.cfg.ledger.path).append(
+                        "backup", {"file": p.name, "kb": round(p.stat().st_size / 1024, 1),
+                                   "by": "human", "via": "dashboard"})
+                    self._json({"ok": True, "file": str(p),
+                                "kb": round(p.stat().st_size / 1024, 1)})
+                else:
+                    self._json({"ok": True, "result": housekeep(self.root)})
             elif path == "/api/models":
                 self._models_fetch()
             elif path == "/api/test-key":
@@ -567,6 +583,17 @@ def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
         "started_at": iso(utcnow()),
         "url": url,
     }, indent=2))
+    # Retention on every start: old research snapshots are evidence, not state,
+    # and they accumulate one per tick. The ledger (which holds the decisions)
+    # is protected and never pruned.
+    try:
+        from .storage import housekeep
+        hk = housekeep(Handler.root)
+        freed = hk.get("total_kb_freed", 0)
+        if freed:
+            print(f"  housekeeping: pruned old snapshots, freed {freed} KB")
+    except Exception as e:  # noqa: BLE001 - housekeeping must never block startup
+        print(f"  housekeeping skipped: {type(e).__name__}: {e}")
     print(f"  mode    {'offline (fake model)' if offline else 'live DeepSeek'}")
     if autostart:
         ap = get_autopilot(Handler.root, Handler.cfg, offline)

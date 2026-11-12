@@ -118,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="autopilot seconds between ticks (0 = don't autostart)")
     ap.add_argument("--live", action="store_true",
                     help="require the real model; refuse to fall back to offline")
+    ap.add_argument("--bg", action="store_true",
+                    help="run detached in the background (survives closing this terminal)")
     args = ap.parse_args(argv)
 
     if not preflight():
@@ -158,6 +160,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"  {DIM}autopilot: idle (press Start in the console){OFF}")
     print(f"  {DIM}Ctrl-C to stop{OFF}\n")
+
+    # Detached mode: hand off to the service manager, which setsid()s the
+    # server so closing this terminal cannot kill it.
+    if args.bg:
+        from magicwand import service as svc
+        out = svc.start(root=ROOT, port=port, interval=interval,
+                        mode="live" if pub["has_key"] else "offline",
+                        autostart=(args.interval != 0))
+        if not out.get("ok"):
+            print(_bad(f"failed to start in background: {out.get('error')}"))
+            if out.get("log_tail"):
+                print(out["log_tail"])
+            return 1
+        real_url = out.get("url", url)
+        print(_ok(f"running in the background at {real_url}  (pid {out['status']['pid']})"))
+        print(f"    {DIM}log:    {out['status']['log']}{OFF}")
+        print(f"    {DIM}stop:   python3 wand.py service stop{OFF}")
+        print(f"    {DIM}status: python3 wand.py service status{OFF}\n")
+        if not args.no_browser:
+            webbrowser.open(real_url)
+        return 0
 
     if not args.no_browser:
         _open_browser_later(url)

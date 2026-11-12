@@ -25,6 +25,8 @@ from . import propose as propose_mod
 from . import research_loop
 from . import runner
 from .config import Config
+from . import service as service_mod
+from . import storage as storage_mod
 from .dashboard import serve as serve_dashboard
 from .desk import AgentDesk, DeskConfig
 from .ledger import Ledger, scorecard
@@ -330,6 +332,57 @@ def cmd_serve(cfg: Config, args) -> int:
                            autostart=args.auto, interval=args.interval)
 
 
+def cmd_service(cfg: Config, args) -> int:
+    action = args.action
+    if action == "start":
+        out = service_mod.start(port=args.port, interval=args.interval,
+                                mode="live" if args.live else "offline",
+                                autostart=(args.interval > 0))
+        if out.get("ok"):
+            print(f"started  {out['url']}   pid {out['status']['pid']}")
+            print(f"log      {out['status']['log']}")
+            print("survives closing this terminal. stop with: wand service stop")
+        else:
+            print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
+    if action == "stop":
+        out = service_mod.stop()
+        print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
+    if action == "restart":
+        service_mod.stop()
+        time.sleep(1)
+        return cmd_service(cfg, argparse.Namespace(action="start", port=args.port,
+                                                   interval=args.interval,
+                                                   live=args.live))
+    if action == "log":
+        print(service_mod.tail_log(lines=args.lines))
+        return 0
+    if action == "autostart":
+        out = service_mod.autostart_install(port=args.port, interval=args.interval)
+        print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
+    print(json.dumps(service_mod.status(), indent=2))
+    return 0
+
+
+def cmd_storage(cfg: Config, args) -> int:
+    if args.prune:
+        print(json.dumps(storage_mod.housekeep("."), indent=2))
+        return 0
+    if args.backup:
+        p = storage_mod.backup(".")
+        print(f"backup written: {p}")
+        print(f"integrity: {p.stat().st_size} bytes")
+        return 0
+    if args.restore:
+        out = storage_mod.restore(".", args.restore, overwrite=args.force)
+        print(json.dumps(out, indent=2))
+        return 0 if out.get("ok") else 1
+    print(json.dumps(storage_mod.storage_report("."), indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="wand", description="MAGICWAND paper trading bot")
     p.add_argument("--config", help="path to a JSON config")
@@ -403,6 +456,22 @@ def main(argv: list[str] | None = None) -> int:
 
     sg = sub.add_parser("strategies", help="list gate-approved strategies")
     sg.set_defaults(fn=cmd_strategies)
+
+    sc = sub.add_parser("service", help="run the console in the background")
+    sc.add_argument("action", nargs="?", default="status",
+                    choices=["start", "stop", "restart", "status", "log", "autostart"])
+    sc.add_argument("--port", type=int, default=8787)
+    sc.add_argument("--interval", type=int, default=900)
+    sc.add_argument("--live", action="store_true")
+    sc.add_argument("--lines", type=int, default=30)
+    sc.set_defaults(fn=cmd_service)
+
+    stg = sub.add_parser("storage", help="local data: size, prune, backup, restore")
+    stg.add_argument("--prune", action="store_true", help="delete old snapshots")
+    stg.add_argument("--backup", action="store_true", help="write a local archive")
+    stg.add_argument("--restore", metavar="ARCHIVE")
+    stg.add_argument("--force", action="store_true", help="overwrite data/ on restore")
+    stg.set_defaults(fn=cmd_storage)
 
     sv = sub.add_parser("serve", help="local web dashboard")
     sv.add_argument("--port", type=int, default=8787)

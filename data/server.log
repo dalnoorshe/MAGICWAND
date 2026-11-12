@@ -1,0 +1,14 @@
+
+=== start 2026-11-12 15:05:51 /usr/bin/python3 /home/hosh/Music/trd/MAGICWAND/wand.py serve --port 8795 --auto --interval 300 ===
+MAGICWAND dashboard  http://127.0.0.1:8795
+  root    /home/hosh/Music/trd/MAGICWAND
+  symbol  SOL-USD @ 1h
+  mode    offline (fake model)
+[autopilot 13:05:51] autopilot started
+
+=== start 2026-11-12 15:07:31 /usr/bin/python3 /home/hosh/Music/trd/MAGICWAND/wand.py serve --port 8799 --auto --interval 900 ===
+MAGICWAND dashboard  http://127.0.0.1:8799
+  root    /home/hosh/Music/trd/MAGICWAND
+  symbol  SOL-USD @ 1h
+  mode    offline (fake model)
+[autopilot 13:07:31] autopilot started

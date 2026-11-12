@@ -114,7 +114,7 @@ class TestBackup(unittest.TestCase):
 
             dst = Path(d) / "dst"
             dst.mkdir()
-            out = restore(dst, arch)
+            out = restore(dst, arch, allow_running=True)
             self.assertTrue(out["ok"], out)
             self.assertEqual((dst / "data" / "ledger.jsonl").read_text(), '{"x":42}\n')
 
@@ -125,7 +125,7 @@ class TestBackup(unittest.TestCase):
             arch = backup(src, out_dir=Path(d) / "out")
             dst = Path(d) / "dst"
             _mk(dst, "ledger.jsonl", '{"live":true}\n')
-            out = restore(dst, arch, overwrite=False)
+            out = restore(dst, arch, overwrite=False, allow_running=True)
             self.assertFalse(out["ok"])
             self.assertIn("not empty", out["error"])
             self.assertIn("live", (dst / "data" / "ledger.jsonl").read_text())
@@ -140,7 +140,22 @@ class TestBackup(unittest.TestCase):
                 import io
                 tar.addfile(info, io.BytesIO(payload))
             with self.assertRaises(ValueError):
-                restore(Path(d) / "dst", evil, overwrite=True)
+                restore(Path(d) / "dst", evil, overwrite=True, allow_running=True)
+
+    def test_restore_moves_old_data_aside_instead_of_deleting(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            _mk(src, "ledger.jsonl", '{"new":1}\n')
+            arch = backup(src, out_dir=Path(d) / "out")
+            dst = Path(d) / "dst"
+            _mk(dst, "ledger.jsonl", '{"old":1}\n')
+            out = restore(dst, arch, overwrite=True, allow_running=True)
+            self.assertTrue(out["ok"], out)
+            self.assertTrue(out["previous_data_moved_to"])
+            aside = Path(out["previous_data_moved_to"])
+            self.assertTrue(aside.exists())
+            self.assertIn("old", (aside / "ledger.jsonl").read_text())
+            self.assertIn("new", (dst / "data" / "ledger.jsonl").read_text())
 
     def test_storage_report_groups(self):
         with tempfile.TemporaryDirectory() as d:

@@ -118,6 +118,29 @@ def is_running(root: Path = ROOT) -> tuple[bool, ServiceState]:
     return True, st
 
 
+def detect_instances(host: str = "127.0.0.1",
+                     ports: range = range(8787, 8800)) -> list[int]:
+    """Ports in range where a MAGICWAND console is answering.
+
+    Works for instances started any way — the pidfile cannot, because a
+    foreground `./start.sh` never writes one.
+    """
+    import json as _json
+    import urllib.error
+    import urllib.request
+    found: list[int] = []
+    for port in ports:
+        try:
+            with urllib.request.urlopen(
+                    f"http://{host}:{port}/api/health", timeout=0.35) as r:
+                data = _json.loads(r.read().decode())
+                if isinstance(data, dict) and data.get("app") == "magicwand":
+                    found.append(port)
+        except (urllib.error.URLError, OSError, ValueError, TypeError):
+            continue
+    return found
+
+
 def _wait_for_http(url: str, timeout: float = 20.0) -> bool:
     import urllib.error
     import urllib.request

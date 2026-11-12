@@ -221,14 +221,30 @@ python3 wand.py service status
 
 ### Only ever run one instance
 
-Two instances would mean two autopilots writing the same files. The launcher
-now checks ports 8787–8798 for a live MAGICWAND before starting and refuses with
-a pointer to the one already running. Stop it with:
+Two instances mean two autopilots writing the same files. The launcher scans
+the standard ports **and** the requested range before starting, and refuses with
+a pointer to the instance already running. Detection is by asking
+`/api/health`, so it works no matter how the first one was started — a
+foreground `./start.sh` writes no pidfile.
 
 ```bash
 python3 wand.py service stop     # background mode
 # or Ctrl-C in the terminal that owns it
 ```
+
+### Destructive commands refuse to run under a live server
+
+Restoring a backup while a console is running means the server keeps writing
+while you overwrite — the reliable way to corrupt a ledger. So:
+
+- `wand storage --restore` **refuses while any instance is running** (override
+  only with `--allow-running`)
+- it **never deletes** current data: existing `data/` is renamed to
+  `data.superseded-<timestamp>/`, so a wrong archive is recoverable
+- it rejects absolute paths and `..` traversal inside the archive
+
+If you break something badly: stop the server, `ls -d data.superseded-*`, and
+rename the one you want back.
 
 ## Your data is local, and it is not lost
 

@@ -376,7 +376,8 @@ def cmd_storage(cfg: Config, args) -> int:
         print(f"integrity: {p.stat().st_size} bytes")
         return 0
     if args.restore:
-        out = storage_mod.restore(".", args.restore, overwrite=args.force)
+        out = storage_mod.restore(".", args.restore, overwrite=args.force,
+                                  allow_running=args.allow_running)
         print(json.dumps(out, indent=2))
         return 0 if out.get("ok") else 1
     print(json.dumps(storage_mod.storage_report("."), indent=2))
@@ -471,6 +472,8 @@ def main(argv: list[str] | None = None) -> int:
     stg.add_argument("--backup", action="store_true", help="write a local archive")
     stg.add_argument("--restore", metavar="ARCHIVE")
     stg.add_argument("--force", action="store_true", help="overwrite data/ on restore")
+    stg.add_argument("--allow-running", action="store_true",
+                     help="restore even while a console is running (dangerous)")
     stg.set_defaults(fn=cmd_storage)
 
     sv = sub.add_parser("serve", help="local web dashboard")

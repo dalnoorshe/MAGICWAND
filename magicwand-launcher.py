@@ -112,29 +112,6 @@ def preflight() -> bool:
     return ok
 
 
-def find_instances(host: str = "127.0.0.1",
-                   ports: range = range(8787, 8800)) -> list[int]:
-    """Ports in range where a MAGICWAND console is already serving.
-
-    Each instance is a single self-contained process, so a second one is
-    almost always a mistake: two autopilots writing the same files.
-    """
-    import json as _json
-    import urllib.error
-    import urllib.request
-    found: list[int] = []
-    for port in ports:
-        try:
-            with urllib.request.urlopen(
-                    f"http://{host}:{port}/api/health", timeout=0.35) as r:
-                data = _json.loads(r.read().decode())
-                if data.get("app") == "magicwand":
-                    found.append(port)
-        except (urllib.error.URLError, OSError, ValueError, TypeError):
-            continue
-    return found
-
-
 def port_free(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -172,7 +149,11 @@ def main(argv: list[str] | None = None) -> int:
     if not preflight():
         return 1
 
-    existing = find_instances(args.host, range(args.port, args.port + 12))
+    from magicwand.service import detect_instances
+    # Scan the requested port range AND the standard one. Scanning only from
+    # the requested port meant starting on 8788 missed the instance on 8787.
+    scan = sorted(set(range(args.port, args.port + 12)) | set(range(8787, 8800)))
+    existing = detect_instances(args.host, scan)
     if existing:
         print(_warn(f"MAGICWAND is already running on port(s) {existing}"))
         print(f"    {DIM}Two instances share the same files — don't run both.{OFF}")

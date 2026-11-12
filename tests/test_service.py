@@ -122,28 +122,14 @@ class TestStateFile(unittest.TestCase):
             self.assertEqual((root / "data" / "server.pid").read_text().strip(), "4242")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class TestInstanceDetection(unittest.TestCase):
     """A second instance is almost always a mistake: two autopilots writing the
-    same files. The launcher must notice and refuse instead of starting another.
+    same files. Detection must work for any start method, because a foreground
+    `./start.sh` never writes a pidfile.
     """
 
-    @staticmethod
-    def _find():
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "mw_launcher", str(Path(__file__).resolve().parents[1] / "magicwand-launcher.py"))
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod.find_instances
-
     def test_detects_a_real_instance(self):
-        """Point it at this test's own HTTP server and it must find it."""
         import http.server
-        import json
         import threading
 
         class H(http.server.BaseHTTPRequestHandler):
@@ -158,17 +144,15 @@ class TestInstanceDetection(unittest.TestCase):
 
         srv = http.server.HTTPServer(("127.0.0.1", 0), H)
         port = srv.server_address[1]
-        t = threading.Thread(target=srv.serve_forever, daemon=True)
-        t.start()
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
-            found = self._find()("127.0.0.1", range(port, port + 1))
-            self.assertEqual(found, [port])
+            self.assertEqual(service.detect_instances("127.0.0.1",
+                                                      range(port, port + 1)), [port])
         finally:
             srv.shutdown()
             srv.server_close()
 
     def test_ignores_a_foreign_server(self):
-        """Something else on the port must not be mistaken for us."""
         import http.server
         import threading
 
@@ -186,10 +170,62 @@ class TestInstanceDetection(unittest.TestCase):
         port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
-            self.assertEqual(self._find()("127.0.0.1", range(port, port + 1)), [])
+            self.assertEqual(service.detect_instances("127.0.0.1",
+                                                      range(port, port + 1)), [])
         finally:
             srv.shutdown()
             srv.server_close()
 
     def test_empty_range_when_nothing_listening(self):
-        self.assertEqual(self._find()("127.0.0.1", range(18600, 18610)), [])
+        self.assertEqual(service.detect_instances("127.0.0.1", range(18600, 18610)), [])
+
+
+class TestRestoreGuard(unittest.TestCase):
+    """Restoring under a live server is how a ledger gets corrupted."""
+
+    def test_restore_refuses_while_an_instance_is_running(self):
+        from magicwand import storage
+        from magicwand.storage import backup, restore
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "data").mkdir()
+            (src / "data" / "ledger.jsonl").write_text("{}\n")
+            arch = backup(src, out_dir=Path(d) / "out")
+            dst = Path(d) / "dst"
+            (dst / "data").mkdir(parents=True)
+            (dst / "data" / "ledger.jsonl").write_text("{}\n")
+            orig = storage.restore.__globals__["__builtins__"]
+            # Patch detection at the module it imports from.
+            import magicwand.service as svc
+            real = svc.detect_instances
+            svc.detect_instances = lambda *a, **k: [8787]
+            try:
+                out = restore(dst, arch, overwrite=True)
+            finally:
+                svc.detect_instances = real
+            self.assertFalse(out["ok"])
+            self.assertIn("running", out["error"].lower())
+            self.assertIn(8787, out["running_on"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
+
+
+class TestDuplicateStartGuard(unittest.TestCase):
+    """The launcher must find an instance on the default port even when asked
+    to start elsewhere — otherwise two autopilots write the same files."""
+
+    def test_scan_includes_default_ports(self):
+        import inspect
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "mw_launcher2",
+            str(Path(__file__).resolve().parents[1] / "magicwand-launcher.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        src = inspect.getsource(mod.main)
+        self.assertIn("8787", src,
+                      "the duplicate check must cover the default port range")
+        self.assertIn("set(range(args.port", src)

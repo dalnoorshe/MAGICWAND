@@ -177,19 +177,53 @@ def backup(root: str | Path, out_dir: str | Path | None = None) -> Path:
 
 
 def restore(root: str | Path, archive: str | Path,
-            overwrite: bool = False) -> dict:
-    """Extract a backup into the project. Refuses to clobber live state unless
-    `overwrite=True`, because restoring over a running ledger is how history
-    gets silently rewritten."""
+            overwrite: bool = False, allow_running: bool = False) -> dict:
+    """Extract a backup into the project.
+
+    Two guards, both learned the hard way:
+
+      * refuse while a console is RUNNING — restoring under a live server means
+        it keeps writing while you overwrite, which is how a ledger gets
+        corrupted;
+      * never destroy what is there — existing data is moved aside to
+        data.superseded-<timestamp>/ rather than deleted, so a wrong archive is
+        recoverable.
+    """
     root = Path(root)
     archive = Path(archive)
     if not archive.exists():
         raise FileNotFoundError(archive)
+
+    if not allow_running:
+        try:
+            from .service import detect_instances
+            live = detect_instances()
+        except Exception:  # noqa: BLE001
+            live = []
+        if live:
+            return {"ok": False,
+                    "error": (f"MAGICWAND is running on port(s) {live}. "
+                              f"Stop it first: python3 wand.py service stop "
+                              f"(or pass --allow-running if you are certain)"),
+                    "running_on": live}
+
     data = root / "data"
     existing = [p.name for p in data.iterdir()] if data.exists() else []
     if existing and not overwrite:
         return {"ok": False, "error": "data/ is not empty; pass overwrite=True "
                                       "to replace it", "existing": existing[:20]}
+
+    moved_to = ""
+    if existing and overwrite:
+        # Move aside instead of deleting: a mistaken restore must be undoable.
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        aside = root / f"data.superseded-{stamp}"
+        try:
+            data.rename(aside)
+            moved_to = str(aside)
+        except OSError as e:
+            return {"ok": False, "error": f"could not move data/ aside: {e}"}
+
     extracted: list[str] = []
     with tarfile.open(archive, "r:gz") as tar:
         # Refuse absolute paths or traversal — an archive is untrusted input.
@@ -199,7 +233,8 @@ def restore(root: str | Path, archive: str | Path,
                 raise ValueError(f"refusing unsafe path in archive: {name}")
         tar.extractall(root)
         extracted = [m.name for m in tar.getmembers() if m.isfile()]
-    return {"ok": True, "extracted": len(extracted), "root": str(root)}
+    return {"ok": True, "extracted": len(extracted), "root": str(root),
+            "previous_data_moved_to": moved_to}
 
 
 # --------------------------------------------------------------------------

@@ -140,6 +140,33 @@ class SettingsStore:
         }
 
 
+def models_cache_path(root: str | Path) -> Path:
+    return Path(root) / "data" / "models.json"
+
+
+def load_models_cache(root: str | Path) -> dict:
+    """Last successfully fetched model catalogue, so the picker works offline."""
+    p = models_cache_path(root)
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text())
+        return d if isinstance(d, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_models_cache(root: str | Path, models: list[dict], source: str = "api") -> None:
+    p = models_cache_path(root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({
+        "fetched_at": __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).isoformat(),
+        "source": source,
+        "models": models,
+    }, indent=2))
+
+
 def resolve_key(root: str | Path) -> str:
     """The key every component should use: environment first, then the console."""
     return SettingsStore(Path(root) / "data" / "settings.json").load().effective_key()

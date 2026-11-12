@@ -37,3 +37,8 @@
 [autopilot 12:47:15] tick 1: research: 4/4 readers reported; evidence +0.00 | idea 'offline_mean_revert_24' refused: near-duplicate of offline_mean_revert (max param difference 8.6% of rang
 [autopilot 12:47:31] autopilot started
 [autopilot 12:47:48] tick 1: research: 0/4 readers reported; 4 degraded; evidence +0.00 | desk stood down: no strategy has passed the gate yet
+[autopilot 12:48:58] tick 2: research: 4/4 readers reported; evidence +0.00 | proposal rejected before validation: family '' is not in the catalog | desk stood down: no strategy has passed 
+[autopilot 12:49:57] autopilot started
+[autopilot 12:50:09] tick 1: research: 4/4 readers reported; evidence +0.00 | strategy 'offline_mean_revert_12' rejected: REJECTED: not profitable at realistic costs (-0.48%); dies at 2x co
+[autopilot 12:50:42] autopilot started
+[autopilot 12:51:04] tick 1: research: 0/4 readers reported; 4 degraded; evidence +0.00 | desk stood down: no strategy has passed the gate yet

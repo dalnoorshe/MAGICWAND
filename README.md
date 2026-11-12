@@ -206,8 +206,22 @@ setup; you never edit `.bashrc`.
 | API | How | Why |
 |---|---|---|
 | **DeepSeek** | Settings → paste `sk-…` → Save → Test connection | BYOK. Enables the real agents and vision. Stored in `data/settings.json`, mode `0600`. |
+| **Models** | Settings → **Fetch models** → pick from the dropdown | The list comes from `GET /models`, never from a hardcoded guess. |
 | **Market data** | nothing to connect | Coinbase candles, Binance derivatives, RSS, Reddit, on-chain — all public, no keys |
 | **Broker** | not available | there is no live broker in this build; paper only |
+
+**Model fetching is real, not cosmetic.** Pressing *Fetch models* calls
+`GET https://api.deepseek.com/models` and builds the picker from the response,
+including each model's capabilities: whether it **accepts images** (from
+`input_modalities`), its context window, and its thinking-effort levels. The
+picker labels a model "sees images" or "text only — vision disabled", so you can
+never select a model that silently cannot read charts. A model the API did not
+report is refused; only `deepseek-flash` and `deepseek-v4-pro` are accepted as
+documented fallbacks when the catalogue has not been fetched yet. The result is
+cached in `data/models.json` so the picker still works offline.
+
+*Test connection* also refreshes the catalogue and shows your **remaining
+balance**, because discovering an empty account mid-run is unpleasant.
 
 Security notes that are enforced, not promised:
 

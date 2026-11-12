@@ -34,7 +34,13 @@ from .config import Config
 from .gatekeeper import TIER_NAMES, Policy, RiskTier
 from .ledger import Ledger, scorecard
 from .reflect import PolicyStore, reflect_and_persist
-from .settings_store import SettingsError, SettingsStore, resolve_key
+from .settings_store import (SettingsError, SettingsStore, load_models_cache,
+                             resolve_key, save_models_cache)
+
+
+# Documented default only. Never invented beyond this: the live catalogue from
+# /models is the source of truth, and the picker is built from it.
+_FALLBACK_MODEL_IDS = {"deepseek-flash", "deepseek-v4-pro"}
 
 
 def get_autopilot(root: Path, cfg: Config, offline: bool = True):
@@ -160,6 +166,7 @@ def build_state(root: Path, cfg: Config) -> dict:
         "service": service,
         "autopilot": autopilot_raw,
         "settings": SettingsStore(data / "settings.json").public_dict(),
+        "models": load_models_cache(root),
         "model_mode": ("live" if resolve_key(root) and not service.get("offline")
                        else "offline"),
     }
@@ -349,14 +356,25 @@ class Handler(BaseHTTPRequestHandler):
         if action != "save":
             self._json({"ok": False, "error": f"unknown action {action!r}"}, 400)
             return
-        try:
-            st.set_key(str(b.get("key", "")))
-        except SettingsError as e:
-            self._json({"ok": False, "error": str(e)}, 400)
-            return
+        # Save fields INDEPENDENTLY. The model picker posts without a key, and
+        # an earlier version treated that as "clear the key" — silently wiping
+        # the operator's credential when they changed model.
+        key = b.get("key")
+        if key is not None and str(key).strip():
+            try:
+                st.set_key(str(key))
+            except SettingsError as e:
+                self._json({"ok": False, "error": str(e)}, 400)
+                return
         cur = st.load()
         if b.get("model"):
-            cur.model = str(b["model"])
+            model = str(b["model"])
+            if not self._model_is_known(self.root, model):
+                self._json({"ok": False,
+                            "error": f"model {model!r} is not in the fetched "
+                                     f"catalogue; press 'Fetch models' first"}, 400)
+                return
+            cur.model = model
         if b.get("autotick_seconds"):
             cur.autotick_seconds = max(60, int(b["autotick_seconds"]))
         st.save(cur)
@@ -365,6 +383,40 @@ class Handler(BaseHTTPRequestHandler):
                                 "hint": cur.masked_key(), "model": cur.model,
                                 "by": "human", "via": "dashboard"})
         self._json({"ok": True, "settings": st.public_dict()})
+
+    def _model_is_known(self, root: Path, model: str) -> bool:
+        """Only allow models the API actually reported (or the built-in default)."""
+        cache = load_models_cache(root)
+        ids = {m.get("id") for m in (cache.get("models") or []) if isinstance(m, dict)}
+        return model in ids or model in _FALLBACK_MODEL_IDS
+
+    def _models_fetch(self) -> None:
+        """Fetch the real model list for the connected key.
+
+        Never invents a catalogue: on failure it reports the error and returns
+        the last cached list (or a documented fallback) labelled as such, so a
+        picker can never silently offer a model that does not exist.
+        """
+        from .llm import DeepSeekClient, LLMError, list_models
+        key = resolve_key(self.root)
+        st = SettingsStore(self.root / "data" / "settings.json")
+        cached = load_models_cache(self.root)
+        if not key:
+            self._json({"ok": False, "error": "no key connected yet",
+                        "models": cached.get("models", []),
+                        "source": "cache" if cached else "none"}, 400)
+            return
+        client = DeepSeekClient(model=st.load().model,
+                                settings_path=str(self.root / "data" / "settings.json"))
+        try:
+            models = list_models(client)
+            save_models_cache(self.root, models, source="api")
+            self._json({"ok": True, "models": models, "source": "api",
+                        "count": len(models)})
+        except LLMError as e:
+            self._json({"ok": False, "error": str(e)[:300],
+                        "models": cached.get("models", []),
+                        "source": "cache" if cached else "none"}, 400)
 
     def _test_key(self) -> None:
         """Make one tiny real call so the operator knows the key works."""
@@ -380,9 +432,19 @@ class Handler(BaseHTTPRequestHandler):
             out = client.chat(system="Reply with the single word: ok",
                               user="ping", max_tokens=8, json_mode=False,
                               retries=0)
-            self._json({"ok": True, "reply": (out or "").strip()[:60],
-                        "model": client.model,
-                        "cost_usd": round(client.usage.cost_usd, 6)})
+            payload = {"ok": True, "reply": (out or "").strip()[:60],
+                       "model": client.model,
+                       "cost_usd": round(client.usage.cost_usd, 6)}
+            # Cheap opportunity to refresh the model catalogue and balance.
+            try:
+                from .llm import get_balance, list_models
+                models = list_models(client)
+                save_models_cache(self.root, models, source="api")
+                payload["models"] = models
+                payload["balance"] = get_balance(client)
+            except LLMError:
+                pass
+            self._json(payload)
         except LLMError as e:
             self._json({"ok": False, "error": str(e)[:300]}, 400)
         except Exception as e:  # noqa: BLE001
@@ -441,6 +503,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "reflection": ref.to_dict()})
             elif path == "/api/settings":
                 self._settings_post()
+            elif path == "/api/models":
+                self._models_fetch()
             elif path == "/api/test-key":
                 self._test_key()
             elif path == "/api/autopilot":
@@ -523,6 +587,7 @@ def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
 
 
 try:
-    _HTML_PAGE = open(Path(__file__).with_name("dashboard.html")).read()
+    with open(Path(__file__).with_name("dashboard.html"), encoding="utf-8") as _f:
+        _HTML_PAGE = _f.read()
 except OSError:  # packaged install without the template
     _HTML_PAGE = "<h1>MAGICWAND</h1><p>dashboard.html is missing from the package.</p>"

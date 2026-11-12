@@ -19,6 +19,8 @@ from typing import Any, Optional
 from .common import utcnow
 
 API_URL = "https://api.deepseek.com/chat/completions"
+MODELS_URL = "https://api.deepseek.com/models"
+BALANCE_URL = "https://api.deepseek.com/user/balance"
 
 # USD per 1M tokens. Peak/off-peak differ (peak = 01:00-04:00 and 06:00-10:00
 # UTC, weekdays). We assume the *higher* (peak) price so budgeting is safe.
@@ -234,6 +236,83 @@ def chat_vision(self: DeepSeekClient, system: str, user: str,
             if attempt < retries:
                 time.sleep(2.0 * (attempt + 1))
     raise LLMError(f"DeepSeek vision request failed after {retries + 1} attempts: {last}")
+
+
+def _get_json_auth(url: str, key: str, timeout: float = 20.0) -> dict:
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(url, method="GET",
+                                 headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode()[:300]
+        except Exception:  # noqa: BLE001
+            pass
+        raise LLMError(f"HTTP {e.code} from {url}: {detail}") from e
+    except urllib.error.URLError as e:
+        raise LLMError(f"network error: {e.reason}") from e
+
+
+def list_models(client: "DeepSeekClient") -> list[dict]:
+    """Fetch the models the key can actually use, with their capabilities.
+
+    Returns a normalised list:
+        {id, name, vision, context_window, max_output_tokens, reasoner}
+
+    This is what the model picker is built from — never a hardcoded guess.
+    Vision support in particular is read from `input_modalities`, because
+    offering an image to a model that cannot see it is a silent failure.
+    """
+    key = client._key()
+    raw = _get_json_auth(MODELS_URL, key, client.timeout)
+    data = raw.get("data") if isinstance(raw, dict) else None
+    if not isinstance(data, list):
+        raise LLMError(f"unexpected /models payload: {str(raw)[:200]}")
+    out: list[dict] = []
+    for m in data:
+        if not isinstance(m, dict) or not m.get("id"):
+            continue
+        raw_id = str(m["id"])
+        mods = m.get("input_modalities") or ["text"]
+        vision = "image" in mods if isinstance(mods, list) else False
+        # Some builds report vision only via the retired -vision- name.
+        if "vision" in raw_id:
+            vision = True
+        effort = (m.get("effort") or {}).get("supported_levels") or []
+        out.append({
+            "id": raw_id,
+            "name": m.get("name") or raw_id,
+            "vision": bool(vision),
+            "context_window": m.get("context_window"),
+            "max_output_tokens": m.get("max_output_tokens"),
+            "effort_levels": effort,
+            "reasoner": bool(effort),
+            "owned_by": m.get("owned_by"),
+        })
+    out.sort(key=lambda x: (not x["vision"], x["id"]))
+    return out
+
+
+def get_balance(client: "DeepSeekClient") -> dict:
+    """Remaining balance for the key. Nice to see before a long run."""
+    key = client._key()
+    raw = _get_json_auth(BALANCE_URL, key, client.timeout)
+    infos = raw.get("balance_infos") if isinstance(raw, dict) else None
+    if not isinstance(infos, list) or not infos:
+        return {"available": raw.get("is_available"), "amount": None,
+                "currency": None}
+    first = infos[0] if isinstance(infos[0], dict) else {}
+    return {
+        "available": raw.get("is_available"),
+        "amount": first.get("total_balance"),
+        "granted": first.get("granted_balance"),
+        "topped_up": first.get("topped_up_balance"),
+        "currency": first.get("currency"),
+    }
 
 
 def _post_json(url: str, body: dict, key: str, timeout: float) -> dict:

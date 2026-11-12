@@ -258,6 +258,7 @@ function renderReflection(r, memory) {
   const ch = r.changes || [];
   box.innerHTML = `
     <div class="dim">${esc(r.ts ? new Date(r.ts).toLocaleString() : "")}</div>
+    <div style="margin:4px 0">${esc(r.summary || "")}</div>
     <div style="margin:6px 0">${ch.length ? ch.map(c => `<div class="good">→ ${esc(c)}</div>`).join("")
       : '<div class="dim">no change warranted</div>'}</div>
     <div class="dim">sample: ${(r.sample && r.sample.trades) || 0} closed trades,

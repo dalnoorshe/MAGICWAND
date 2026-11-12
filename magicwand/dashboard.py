@@ -300,7 +300,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(out)
             elif path == "/api/reflect":
                 ledger = Ledger(self.root / self.cfg.ledger.path)
-                ref = reflect_and_persist(ledger, PolicyStore(self.root / "data" / "policy.json"))
+                ref = reflect_and_persist(
+                    ledger, PolicyStore(self.root / "data" / "policy.json"))
+                # Mirror into memory.json: that is what the page reads, and a
+                # reflection the UI cannot see is a reflection nobody acts on.
+                mem = _read_json(self.root / "data" / "memory.json", {})
+                mem["blacklisted_families"] = ref.blacklisted_families
+                mem["preferred_families"] = ref.preferred_families
+                mem["agent_weights"] = ref.agent_weights
+                mem["last_reflection"] = ref.to_dict()
+                (self.root / "data" / "memory.json").write_text(
+                    json.dumps(mem, indent=2))
                 self._json({"ok": True, "reflection": ref.to_dict()})
             elif path == "/api/tier":
                 b = self._body()

@@ -183,7 +183,10 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
     graded = grade_agent_claims(ledger, symbol, price, now=now)
     recorded = record_verdicts(ledger, report, price, when=now)
 
+    # Persist the verdicts themselves, not just the summary: the dashboard has
+    # to be able to show WHY a decision was made after a restart.
     ledger.append("research", {
+        "ts": report.ts,
         "symbol": symbol,
         "decision": report.decision,
         "evidence_score": report.evidence_score,
@@ -192,6 +195,15 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
         "calls": report.calls,
         "cost_usd": report.cost_usd,
         "sources_missing": snapshot.missing(),
+        "agents": [{
+            "agent": v.agent,
+            "stance": v.stance,
+            "confidence": v.confidence,
+            "evidence_score": v.evidence_score,
+            "thesis": v.thesis[:400],
+            "error": v.error,
+            "warnings": v.warnings[:3],
+        } for v in report.agents],
     })
 
     # The desk may act, but only on an assured support verdict.

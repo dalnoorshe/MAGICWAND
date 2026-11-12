@@ -63,7 +63,9 @@ class Reflection:
     sample: dict
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d["summary"] = self.summary   # derived, but the UI needs it
+        return d
 
     @property
     def summary(self) -> str:

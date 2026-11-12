@@ -21,11 +21,14 @@ from . import backtest as bt
 from . import data as data_mod
 from . import paper
 from . import research as research_mod
+from . import propose as propose_mod
 from . import research_loop
+from . import runner
 from .config import Config
+from .dashboard import serve as serve_dashboard
 from .desk import AgentDesk, DeskConfig
 from .ledger import Ledger, scorecard
-from .llm import DeepSeekClient, fake_canned
+from .llm import DeepSeekClient, fake_canned, fake_proposal
 from .strategy import build as build_strategy
 
 
@@ -256,6 +259,76 @@ def cmd_desk(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_propose(cfg: Config, args) -> int:
+    """Ask the agent for a strategy, then put it through the gate."""
+    client = DeepSeekClient(model=args.model,
+                            fake=fake_canned if args.offline else None)
+    if not client.available():
+        print("No API key. Set DEEPSEEK_API_KEY (BYOK) or use --offline.",
+              file=sys.stderr)
+        return 2
+    symbol = args.symbol or cfg.market.symbol
+    bars = data_mod.fetch(cfg.market.exchange, symbol, cfg.market.timeframe,
+                          max(600, cfg.market.candles), seed=cfg.seed)
+    from .research import MarketSnapshot, Source, iso, utcnow
+    snap = MarketSnapshot(ts=iso(utcnow()), symbol=symbol, price=bars[-1].close)
+    snap.sources["derivatives"] = Source("derivatives", True, snap.ts,
+                                         {"funding_rate_pct": 0.01})
+    spec = propose_mod.propose(client, symbol=symbol,
+                               market_context=snap.to_prompt(),
+                               proposer_fake=fake_proposal if args.offline else None)
+    print(f"\n  PROPOSED: {spec.name}  ({spec.family})")
+    print(f"  hypothesis: {spec.hypothesis}")
+    print(f"  params: {spec.params}")
+    result = propose_mod.validate(spec, bars, cfg)
+    print(f"\n  {result.summary}")
+    for gate, (ok, detail) in result.gates.items():
+        print(f"    {'PASS' if ok else 'FAIL'}  {gate:15s} {detail}")
+    if result.passed:
+        reg = propose_mod.StrategyRegistry(Path("data") / "strategies.json")
+        reg.add(spec, result)
+        print("\n  registered. The runner may now trade it inside the desk.")
+    return 0 if result.passed else 1
+
+
+def cmd_run(cfg: Config, args) -> int:
+    """The unattended loop."""
+    client = DeepSeekClient(model=args.model,
+                            fake=fake_canned if args.offline else None,
+                            max_calls_per_day=args.max_calls,
+                            max_cost_per_day_usd=args.max_cost)
+    if not client.available():
+        print("No API key. Set DEEPSEEK_API_KEY (BYOK) or use --offline.",
+              file=sys.stderr)
+        return 2
+    dcfg = DeskConfig(enabled=not args.no_desk,
+                      min_confidence=args.min_confidence)
+    return runner.run(cfg, client, dcfg, interval=args.interval,
+                      max_ticks=args.ticks, propose_enabled=not args.no_propose,
+                      subreddit=args.subreddit, offline=args.offline)
+
+
+def cmd_strategies(cfg: Config, args) -> int:
+    reg = propose_mod.StrategyRegistry(Path("data") / "strategies.json")
+    items = reg.load()
+    if not items:
+        print("no strategy has passed the gate yet.")
+        return 0
+    for it in items:
+        sp = it.get("spec", {})
+        m = it.get("validation", {}).get("metrics", {})
+        print(f"  {sp.get('name'):24s} {sp.get('family'):12s} "
+              f"holdout {m.get('holdout_return', 0):+.2%}  "
+              f"train {m.get('train_return', 0):+.2%}  "
+              f"{'DEPLOYED' if it.get('deployed') else '-'}")
+    return 0
+
+
+def cmd_serve(cfg: Config, args) -> int:
+    return serve_dashboard(root=".", host=args.host, port=args.port,
+                           cfg=cfg, offline=not args.live)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="wand", description="MAGICWAND paper trading bot")
     p.add_argument("--config", help="path to a JSON config")
@@ -307,6 +380,35 @@ def main(argv: list[str] | None = None) -> int:
 
     dk = sub.add_parser("desk", help="show the agent desk sandbox state")
     dk.set_defaults(fn=cmd_desk)
+
+    pr = sub.add_parser("propose", help="agent invents a strategy; the gate judges it")
+    pr.add_argument("--symbol")
+    pr.add_argument("--model", default="deepseek-flash")
+    pr.add_argument("--offline", action="store_true")
+    pr.set_defaults(fn=cmd_propose)
+
+    rn = sub.add_parser("run", help="unattended autonomous loop")
+    rn.add_argument("--interval", type=int, default=300)
+    rn.add_argument("--ticks", type=int, default=0, help="0 = run forever")
+    rn.add_argument("--model", default="deepseek-flash")
+    rn.add_argument("--offline", action="store_true")
+    rn.add_argument("--no-desk", action="store_true")
+    rn.add_argument("--no-propose", action="store_true")
+    rn.add_argument("--min-confidence", type=float, default=0.80)
+    rn.add_argument("--subreddit", default="solana")
+    rn.add_argument("--max-calls", type=int, default=400)
+    rn.add_argument("--max-cost", type=float, default=2.0)
+    rn.set_defaults(fn=cmd_run)
+
+    sg = sub.add_parser("strategies", help="list gate-approved strategies")
+    sg.set_defaults(fn=cmd_strategies)
+
+    sv = sub.add_parser("serve", help="local web dashboard")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--live", action="store_true",
+                    help="call the real DeepSeek API (needs DEEPSEEK_API_KEY)")
+    sv.set_defaults(fn=cmd_serve)
 
     args = p.parse_args(argv)
     cfg = _load_config(args.config)

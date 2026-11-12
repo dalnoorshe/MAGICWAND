@@ -171,6 +171,41 @@ def _post_json(url: str, body: dict, key: str, timeout: float) -> dict:
 # is that the pipeline can be exercised without a key or a network.
 # --------------------------------------------------------------------------
 
+def fake_proposal(system: str, user: str) -> str:
+    """Offline stand-in for the strategy proposer.
+
+    Reads the catalog ranges out of the prompt and emits a deterministic,
+    in-range proposal. It is not intelligent; its job is to let the whole
+    gate be exercised without a key. The gate, not this function, decides.
+    """
+    import re
+    family = "sma_trend"
+    if "breakout" in user and "mean_revert" in user:
+        # Pick deterministically from what the context emphasises.
+        if "oversold" in user.lower() or "mean" in user.lower():
+            family = "mean_revert"
+        elif "breakout" in user.lower() or "high" in user.lower():
+            family = "breakout"
+    if family == "mean_revert":
+        params = {"slow": 30, "z_entry": 2.0, "stop_atr": 2.0,
+                  "target_atr": 3.0, "max_hold_bars": 48}
+    elif family == "breakout":
+        params = {"slow": 24, "stop_atr": 2.0, "target_atr": 4.0,
+                  "max_hold_bars": 48}
+    else:
+        params = {"fast": 12, "slow": 48, "stop_atr": 2.0,
+                  "target_atr": 4.0, "max_hold_bars": 72}
+    return json.dumps({
+        "name": f"offline_{family}",
+        "hypothesis": ("offline placeholder: testing whether this family's "
+                       "mechanism survives realistic and doubled costs"),
+        "family": family,
+        "params": params,
+        "symbol": "SOL-USD",
+        "timeframe": "1h",
+    })
+
+
 def fake_canned(system: str, user: str) -> str:
     low = user.lower()
     bearish, bullish = 0, 0

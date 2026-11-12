@@ -36,6 +36,7 @@ from typing import Optional
 from .broker import PaperBroker, Portfolio
 from .common import ExitReason, Position, Side, Trade, iso, parse_iso, utcnow
 from .config import Config
+from .gatekeeper import Gatekeeper, Policy, RiskTier, default_policy
 from .ledger import Ledger
 
 
@@ -56,6 +57,9 @@ class DeskConfig:
     stop_atr_mult: float = 2.0
     max_hold_bars: int = 24
     autonomy_armed: bool = True
+    # The tier is a human-set ceiling. Default is the read-only tier: an
+    # operator must opt in to letting anything trade.
+    tier: RiskTier = RiskTier.RESEARCH
 
 
 @dataclass
@@ -68,6 +72,11 @@ class DeskState:
     autonomy_armed: bool = True
     revoked_reason: str = ""
     opened_by: str = ""
+    # What the desk was funded with, and the total account equity at that
+    # moment. The gatekeeper needs the TRUE pot fraction, which is the funded
+    # amount over account equity — not cash-after-a-trade over equity.
+    funded_amount: float = 0.0
+    funded_against_equity: float = 0.0
     # `pot` is CASH, exactly like Portfolio.cash. The position is held beside
     # it. Equity = cash + position value at market, computed on demand.
 
@@ -80,6 +89,13 @@ class AgentDesk:
         self.path = self.root / "data" / "desk.json"
         self.ledger = Ledger(self.root / cfg.ledger.path)
         self.state = self._load()
+        self.gate = Gatekeeper(Policy(tier=dcfg.tier))
+        # Config is the operator's current intent; if they re-armed the desk,
+        # that has to survive a restart, not live only in memory.
+        if dcfg.autonomy_armed != self.state.autonomy_armed and dcfg.autonomy_armed:
+            self.state.autonomy_armed = True
+            self.state.revoked_reason = ""
+            self.save()
 
     # ---- persistence ----
 
@@ -97,6 +113,8 @@ class AgentDesk:
             autonomy_armed=bool(d.get("autonomy_armed", True)),
             revoked_reason=str(d.get("revoked_reason", "")),
             opened_by=str(d.get("opened_by", "")),
+            funded_amount=float(d.get("funded_amount", 0.0)),
+            funded_against_equity=float(d.get("funded_against_equity", 0.0)),
         )
         p = d.get("position")
         if p:
@@ -133,6 +151,8 @@ class AgentDesk:
             "autonomy_armed": self.state.autonomy_armed,
             "revoked_reason": self.state.revoked_reason,
             "opened_by": self.state.opened_by,
+            "funded_amount": round(self.state.funded_amount, 8),
+            "funded_against_equity": round(self.state.funded_against_equity, 8),
             "position": None if p is None else {
                 "symbol": p.symbol, "side": p.side.value, "qty": p.qty,
                 "entry_price": p.entry_price, "entry_ts": iso(p.entry_ts),
@@ -161,6 +181,8 @@ class AgentDesk:
             return self.state.pot
         target = max(0.0, total_equity * self.dcfg.max_fraction_of_equity)
         self.state.pot = round(target, 6)
+        self.state.funded_amount = self.state.pot
+        self.state.funded_against_equity = total_equity
         self.ledger.append("desk_fund", {
             "pot": self.state.pot, "total_equity": total_equity,
             "cap_fraction": self.dcfg.max_fraction_of_equity,
@@ -212,6 +234,20 @@ class AgentDesk:
 
         if not self.dcfg.enabled:
             return refuse("desk is disabled")
+        # --- the gatekeeper is the last word before any broker call ---
+        eff = self.gate.policy.effective()
+        # Use the funded amount vs the equity it was funded against. Cash alone
+        # reads as 100% of the account the moment the pot is fully invested.
+        pot_fraction = (self.state.funded_amount / self.state.funded_against_equity
+                        if self.state.funded_against_equity > 0 else 1.0)
+        verdict = self.gate.check_order(
+            pot_fraction=pot_fraction,
+            trade_pct_of_pot=self.dcfg.max_trade_pct_of_desk,
+            trades_today=self.state.trades_today,
+            confidence=confidence,
+            symbol_whitelisted=symbol in self.dcfg.whitelist)
+        if not verdict.allowed:
+            return refuse(f"gatekeeper: {verdict.reason}")
         if self.cfg.risk.kill_switch:
             return refuse("kill switch is enabled")
         if not self.state.autonomy_armed:
@@ -241,7 +277,7 @@ class AgentDesk:
             return refuse(f"position {qty * price * slip:.2f} is below the "
                           f"exchange minimum {self.cfg.risk.min_notional:.2f}")
 
-        stop = price - self.dcfg.stop_atr_mult * atr
+        stop = price - eff["stop_atr_mult"] * atr
         if stop <= 0:
             return refuse("ATR stop would be negative; refusing")
         risk_amt = qty * (price - stop)

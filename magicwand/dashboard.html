@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MAGICWAND — operator console</title>
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #12151c; --panel2: #171b24; --line: #242a36;
+    --txt: #e6e9ef; --dim: #8b94a7; --dimmer: #5c6577;
+    --good: #35d07f; --bad: #ff5d6c; --warn: #ffb020; --accent: #6ea8fe;
+    --purple: #b98cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; display: flex; gap: 18px;
+    align-items: center; flex-wrap: wrap; padding: 10px 16px;
+    background: linear-gradient(180deg, #12151c, #0e1117);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-weight: 700; letter-spacing: 2px; color: var(--purple); }
+  .brand small { color: var(--dimmer); letter-spacing: 0; font-weight: 400; margin-left: 8px; }
+  .kpi { display: flex; gap: 6px; align-items: baseline; }
+  .kpi .v { font-size: 16px; font-weight: 700; }
+  .kpi .l { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .grow { flex: 1; }
+  .badge {
+    padding: 3px 8px; border-radius: 4px; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 1px; border: 1px solid var(--line);
+  }
+  .b-good { color: var(--good); border-color: #1d5a3a; background: #0f2119; }
+  .b-bad { color: var(--bad); border-color: #5a2028; background: #210f12; }
+  .b-warn { color: var(--warn); border-color: #5a441c; background: #221a0d; }
+  .b-dim { color: var(--dim); }
+  button {
+    background: var(--panel2); color: var(--txt); border: 1px solid var(--line);
+    padding: 7px 12px; border-radius: 5px; cursor: pointer; font: inherit;
+  }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #1d3a5f; border-color: #2b5a8f; }
+  button.danger { background: #3a161c; border-color: #6b2430; color: #ffb3ba; }
+  main { padding: 14px 16px 60px; display: grid; gap: 14px;
+         grid-template-columns: repeat(12, 1fr); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px; min-width: 0;
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--dim); font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .span-4 { grid-column: span 4; }
+  .span-6 { grid-column: span 6; }
+  .span-8 { grid-column: span 8; }
+  .span-12 { grid-column: span 12; }
+  @media (max-width: 980px) {
+    .span-4, .span-6, .span-8 { grid-column: span 12; }
+  }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid #1b202b; }
+  th { color: var(--dimmer); font-weight: 500; font-size: 11px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .good { color: var(--good); } .bad { color: var(--bad); }
+  .dim { color: var(--dim); } .dimmer { color: var(--dimmer); }
+  .mono { font-variant-numeric: tabular-nums; }
+  .agent { padding: 7px 9px; border-left: 3px solid var(--line);
+           background: var(--panel2); border-radius: 4px; margin-bottom: 6px; }
+  .agent.veto { border-left-color: var(--bad); }
+  .agent.support { border-left-color: var(--good); }
+  .agent.neutral { border-left-color: var(--dim); }
+  .agent.err { border-left-color: var(--warn); }
+  .agent .row { display: flex; justify-content: space-between; gap: 8px; }
+  .agent .thesis { color: var(--dim); margin-top: 3px; font-size: 12px; }
+  .bar { height: 4px; background: #1b202b; border-radius: 2px; overflow: hidden; margin-top: 5px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .feed { max-height: 300px; overflow: auto; font-size: 12px; }
+  .feed div { padding: 3px 0; border-bottom: 1px solid #171b24; }
+  .k { color: var(--accent); }
+  .k.grade { color: var(--purple); } .k.veto, .k.desk_refused { color: var(--bad); }
+  .k.fill, .k.agent_trade { color: var(--good); }
+  .k.reflection { color: var(--warn); } .k.tier_change { color: var(--warn); }
+  .tiers { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tier { flex: 1; min-width: 110px; padding: 8px; border-radius: 5px;
+          border: 1px solid var(--line); background: var(--panel2); cursor: pointer; }
+  .tier.on { border-color: var(--accent); background: #14243a; }
+  .tier .n { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .tier .d { color: var(--dim); font-size: 11px; margin-top: 3px; }
+  svg { display: block; width: 100%; height: 120px; }
+  .empty { color: var(--dimmer); font-style: italic; padding: 8px 0; }
+  .toast {
+    position: fixed; right: 16px; bottom: 16px; max-width: 460px;
+    background: #1a2030; border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px; display: none; font-size: 12px; white-space: pre-wrap;
+  }
+  .toast.show { display: block; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">MAGICWAND <small>operator console</small></div>
+  <div class="kpi"><span class="l">equity</span><span class="v mono" id="equity">—</span></div>
+  <div class="kpi"><span class="l">desk</span><span class="v mono" id="deskpot">—</span></div>
+  <div class="kpi"><span class="l">tier</span><span class="badge b-dim" id="tier">—</span></div>
+  <div class="kpi"><span class="l">ledger</span><span class="badge" id="chain">—</span></div>
+  <div class="grow"></div>
+  <button class="primary" id="btnTick">Run one tick</button>
+  <button id="btnReflect">Reflect</button>
+  <span class="badge b-dim" id="mode">—</span>
+</header>
+
+<main>
+  <section class="card span-8">
+    <h2>Research — what the readers think <span class="dimmer" id="researchTs"></span></h2>
+    <div id="decision" class="dimmer">no cycle yet</div>
+    <div id="agents" style="margin-top:10px"></div>
+  </section>
+
+  <section class="card span-4">
+    <h2>Desk — sandbox</h2>
+    <div id="deskbody" class="dimmer">no desk state</div>
+  </section>
+
+  <section class="card span-6">
+    <h2>Equity</h2>
+    <svg id="chart" viewBox="0 0 600 120" preserveAspectRatio="none"></svg>
+    <div class="dimmer" id="chartNote" style="margin-top:6px"></div>
+  </section>
+
+  <section class="card span-6">
+    <h2>Reflection — what the system learned</h2>
+    <div id="reflection" class="dimmer">nothing yet</div>
+    <h2 style="margin-top:14px">Risk tier — set by a human</h2>
+    <div class="tiers" id="tiers"></div>
+    <div class="dimmer" style="margin-top:8px">
+      Agents can never raise their own tier. This control writes a human action to the ledger.
+    </div>
+  </section>
+
+  <section class="card span-6">
+    <h2>Gate-approved strategies</h2>
+    <div id="strategies" class="dimmer">none</div>
+  </section>
+
+  <section class="card span-6">
+    <h2>Ledger feed <span class="dimmer" id="feedNote"></span></h2>
+    <div class="feed" id="feed"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 2) => (n === null || n === undefined || isNaN(n)) ? "—" : Number(n).toFixed(d);
+const pct = (n) => (n === null || n === undefined || isNaN(n)) ? "—" : (n * 100).toFixed(2) + "%";
+const money = (n) => (n === null || n === undefined) ? "—" : "$" + Number(n).toFixed(2);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 7000);
+}
+
+async function post(url, body) {
+  const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                              body: JSON.stringify(body || {})});
+  return r.json();
+}
+
+function drawChart(series) {
+  const svg = $("chart");
+  const pts = (series || []).filter(p => typeof p.equity === "number");
+  $("chartNote").textContent = pts.length ? `${pts.length} marks` : "no marks yet — run a tick";
+  if (pts.length < 2) { svg.innerHTML = ""; return; }
+  const vals = pts.map(p => p.equity);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = (max - min) || 1;
+  const W = 600, H = 120, pad = 4;
+  const x = i => pad + (i / (pts.length - 1)) * (W - pad * 2);
+  const y = v => H - pad - ((v - min) / span) * (H - pad * 2);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.equity).toFixed(1)}`).join(" ");
+  const up = vals[vals.length - 1] >= vals[0];
+  const col = up ? "#35d07f" : "#ff5d6c";
+  svg.innerHTML = `
+    <path d="${d}" fill="none" stroke="${col}" stroke-width="1.6" />
+    <path d="${d} L${x(pts.length-1)},${H} L${x(0)},${H} Z" fill="${col}" opacity="0.08" />
+    <text x="${pad}" y="12" fill="#5c6577" font-size="10">${max.toFixed(2)}</text>
+    <text x="${pad}" y="${H - 2}" fill="#5c6577" font-size="10">${min.toFixed(2)}</text>`;
+}
+
+function renderAgents(research) {
+  const box = $("agents");
+  if (!research) { box.innerHTML = '<div class="empty">no research cycle recorded yet</div>'; return; }
+  $("researchTs").textContent = research.ts ? new Date(research.ts).toLocaleString() : "";
+  const dec = research.decision || "neutral";
+  $("decision").innerHTML =
+    `decision <b class="${dec === "veto" ? "bad" : dec === "support" ? "good" : "dim"}">${esc(dec.toUpperCase())}</b>` +
+    ` · evidence <span class="mono">${(research.evidence_score ?? 0).toFixed(2)}</span>` +
+    ` · readers <span class="dim">${esc(research.summary || "")}</span>`;
+  const agents = research.agents || [];
+  if (!agents.length) { box.innerHTML = '<div class="empty">no agent verdicts</div>'; return; }
+  box.innerHTML = agents.map(a => {
+    if (a.error) {
+      return `<div class="agent err"><div class="row"><b>${esc(a.agent)}</b>
+        <span class="badge b-warn">degraded</span></div>
+        <div class="thesis">${esc(a.error)}</div></div>`;
+    }
+    const conf = Number(a.confidence || 0);
+    return `<div class="agent ${esc(a.stance)}">
+      <div class="row"><b>${esc(a.agent)}</b>
+        <span><span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
+        <span class="dim mono"> conf ${conf.toFixed(2)} · ev ${Number(a.evidence_score||0).toFixed(2)}</span></span></div>
+      <div class="thesis">${esc(a.thesis || "")}</div>
+      <div class="bar"><i style="width:${Math.round(conf*100)}%"></i></div>
+    </div>`;
+  }).join("");
+}
+
+function renderDesk(d) {
+  const body = $("deskbody");
+  $("deskpot").textContent = money(d.cash);
+  if (!d || d.cash === undefined) { body.innerHTML = '<div class="empty">no desk state</div>'; return; }
+  const pos = d.position;
+  const arm = d.autonomy_armed
+    ? '<span class="badge b-good">autonomy armed</span>'
+    : '<span class="badge b-bad">revoked</span>';
+  body.innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+      ${arm}
+      <span class="dim">trades ${d.trades ?? 0}</span>
+      <span class="dim">win ${d.win_rate === null || d.win_rate === undefined ? "—" : pct(d.win_rate)}</span>
+      <span class="dim">today ${d.trades_today ?? 0}</span>
+    </div>
+    ${d.revoked_reason ? `<div class="bad" style="margin-bottom:8px">${esc(d.revoked_reason)}</div>` : ""}
+    ${pos ? `<div class="agent support"><div class="row"><b>${esc(pos.symbol)}</b>
+        <span class="mono">qty ${Number(pos.qty).toFixed(6)}</span></div>
+        <div class="thesis">entry ${fmt(pos.entry_price, 4)} · stop ${fmt(pos.stop, 4)} · held ${pos.bars_held ?? 0} bars</div></div>`
+      : '<div class="empty">no open position</div>'}
+    ${(d.recent_trades || []).length ? `<table><tr><th>net</th><th>reason</th><th>exit</th></tr>
+      ${d.recent_trades.slice(-6).reverse().map(t => `<tr>
+        <td class="num ${t.net >= 0 ? "good" : "bad"}">${t.net >= 0 ? "+" : ""}${fmt(t.net, 4)}</td>
+        <td class="dim">${esc(t.reason || "")}</td>
+        <td class="dim">${t.exit_ts ? new Date(t.exit_ts).toLocaleString() : ""}</td></tr>`).join("")}
+      </table>` : ""}`;
+}
+
+function renderReflection(r, memory) {
+  const box = $("reflection");
+  if (!r) { box.innerHTML = '<div class="empty">no reflection yet — run a tick</div>'; return; }
+  const ch = r.changes || [];
+  box.innerHTML = `
+    <div class="dim">${esc(r.ts ? new Date(r.ts).toLocaleString() : "")}</div>
+    <div style="margin:6px 0">${ch.length ? ch.map(c => `<div class="good">→ ${esc(c)}</div>`).join("")
+      : '<div class="dim">no change warranted</div>'}</div>
+    <div class="dim">sample: ${(r.sample && r.sample.trades) || 0} closed trades,
+      ${(r.sample && r.sample.graded_agents) || 0} graded agents</div>
+    ${(memory.blacklisted_families || []).length ?
+      `<div style="margin-top:6px"><span class="bad">demoted:</span> ${memory.blacklisted_families.map(esc).join(", ")}</div>` : ""}
+    ${(memory.preferred_families || []).length ?
+      `<div><span class="good">preferred:</span> ${memory.preferred_families.map(esc).join(", ")}</div>` : ""}`;
+}
+
+function renderStrategies(list) {
+  const box = $("strategies");
+  if (!list || !list.length) { box.innerHTML = '<div class="empty">no strategy has passed the gate yet</div>'; return; }
+  box.innerHTML = `<table><tr><th>name</th><th>family</th><th class="num">holdout</th><th class="num">train</th><th></th></tr>
+    ${list.map(s => `<tr>
+      <td>${esc(s.name)}</td><td class="dim">${esc(s.family)}</td>
+      <td class="num ${((s.metrics||{}).holdout_return||0) >= 0 ? "good" : "bad"}">${pct((s.metrics||{}).holdout_return)}</td>
+      <td class="num dim">${pct((s.metrics||{}).train_return)}</td>
+      <td>${s.deployed ? '<span class="badge b-good">deployed</span>' : '<span class="badge b-dim">idle</span>'}</td>
+    </tr>`).join("")}</table>`;
+}
+
+function renderFeed(recent) {
+  const box = $("feed");
+  if (!recent || !recent.length) { box.innerHTML = '<div class="empty">ledger empty</div>'; return; }
+  $("feedNote").textContent = recent.length + " shown";
+  box.innerHTML = recent.map(e => {
+    const p = e.payload || {};
+    let detail = "";
+    if (e.kind === "research") detail = `${p.decision} · ${p.summary || ""}`;
+    else if (e.kind === "proposal") detail = p.ok ? `PASSED ${(p.spec||{}).name}` : `rejected: ${p.summary || p.error || ""}`;
+    else if (e.kind === "agent_claim") detail = `${p.agent}: ${p.statement || ""}`;
+    else if (e.kind === "grade") detail = `${p.verdict} (${p.realized_move})`;
+    else if (e.kind === "reflection") detail = p.summary || "";
+    else if (e.kind === "desk_refused") detail = p.reason || "";
+    else if (e.kind === "agent_trade") detail = `${p.agent} ${p.symbol} @ ${p.price}`;
+    else if (e.kind === "tier_change") detail = `→ ${p.name} by ${p.by}`;
+    else detail = JSON.stringify(p).slice(0, 140);
+    return `<div><span class="dimmer">${e.ts ? new Date(e.ts).toLocaleTimeString() : ""}</span>
+      <span class="k ${esc(e.kind)}">${esc(e.kind)}</span>
+      <span class="dim">${esc(String(detail).slice(0, 220))}</span></div>`;
+  }).join("");
+}
+
+function renderTiers(tiers, current) {
+  const box = $("tiers");
+  const desc = {
+    "0": "read-only: analyse and propose, never trade",
+    "1": "sandbox: 10% pot, 1 trade/day",
+    "2": "scaled sandbox: 25% pot, 3 trades/day",
+    "3": "live — not implemented, refused"
+  };
+  box.innerHTML = Object.entries(tiers || {}).map(([k, name]) => `
+    <div class="tier ${Number(k) === current ? "on" : ""}" data-tier="${k}">
+      <div class="n">${esc(name)}</div>
+      <div class="d">${esc(desc[k] || "")}</div>
+    </div>`).join("");
+  box.querySelectorAll(".tier").forEach(el => {
+    el.onclick = async () => {
+      const t = Number(el.dataset.tier);
+      if (!confirm(`Set risk tier to "${tiers[t]}"?\n\nThis is a human permission change and will be recorded in the ledger.`)) return;
+      const r = await post("/api/tier", {tier: t, confirm: true});
+      toast(r.ok ? `tier set to ${r.name}` : "failed: " + r.error);
+      refresh();
+    };
+  });
+}
+
+async function refresh() {
+  try {
+    const s = await (await fetch("/api/state")).json();
+    $("equity").textContent = money(s.account_equity);
+    $("mode").textContent = s.service && s.service.mode ? s.service.mode : "offline";
+    $("mode").className = "badge " + (s.service && s.service.mode === "live" ? "b-good" : "b-dim");
+    $("tier").textContent = s.policy.tier_name;
+    $("tier").className = "badge " + (s.policy.tier === 0 ? "b-dim" : s.policy.tier >= 3 ? "b-bad" : "b-warn");
+    $("chain").textContent = s.ledger.ok ? `chain ok · ${s.ledger.entries}` : "CHAIN BROKEN";
+    $("chain").className = "badge " + (s.ledger.ok ? "b-good" : "b-bad");
+    renderAgents(s.research);
+    renderDesk(s.desk);
+    drawChart(s.equity_series);
+    renderReflection(s.reflection, s.memory || {});
+    renderTiers(s.tiers, s.policy.tier);
+    renderStrategies(s.strategies);
+    renderFeed(s.recent);
+  } catch (e) {
+    toast("dashboard error: " + e.message);
+  }
+}
+
+$("btnTick").onclick = async () => {
+  $("btnTick").disabled = true;
+  toast("running a tick…");
+  try {
+    const r = await post("/api/tick", {});
+    if (!r.ok) toast("tick failed: " + (r.error || "unknown"));
+    else {
+      const rep = r.report || {};
+      toast([...(rep.actions || []), ...(rep.notes || [])].join("\n") || "tick complete, no action");
+    }
+  } finally { $("btnTick").disabled = false; refresh(); }
+};
+$("btnReflect").onclick = async () => {
+  const r = await post("/api/reflect", {});
+  toast(r.ok ? (r.reflection.changes.join("\n") || "no change warranted") : "failed: " + r.error);
+  refresh();
+};
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

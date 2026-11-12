@@ -1,0 +1,366 @@
+"""MAGICWAND — local web dashboard.
+
+A single-file, dependency-free HTTP server (standard library only) that serves
+one HTML page and a JSON state endpoint. It reads the same files the bot
+writes — ledger, desk state, policy, memory, strategies — so there is exactly
+one source of truth.
+
+Binding is 127.0.0.1 by default: this is an operator console, not a public
+service. It has no authentication, so do not expose it to a network.
+
+Endpoints:
+    GET  /                 the dashboard
+    GET  /api/state        everything the page renders
+    POST /api/tick         run one autonomous tick (offline or live model)
+    POST /api/reflect      re-run reflection and persist it
+    POST /api/tier         set the risk tier  {tier: 0..3, confirm: true}
+    GET  /api/health       liveness + whether a model key is configured
+
+Concurrency: one tick at a time, guarded by a lock file, so hitting the button
+twice cannot double-trade.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+from .common import iso, parse_iso, utcnow
+from .config import Config
+from .gatekeeper import TIER_NAMES, Policy, RiskTier
+from .ledger import Ledger, scorecard
+from .reflect import PolicyStore, reflect_and_persist
+
+
+# --------------------------------------------------------------------------
+# State assembly
+# --------------------------------------------------------------------------
+
+def _read_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return default
+
+
+def _equity_series(ledger: Ledger, limit: int = 400) -> list[dict]:
+    pts = []
+    for e in ledger.entries():
+        if e.get("kind") != "mark":
+            continue
+        p = e.get("payload", {}) or {}
+        pts.append({"ts": e.get("ts"), "equity": p.get("equity"),
+                    "price": p.get("price")})
+    return pts[-limit:]
+
+
+def _recent(ledger: Ledger, limit: int = 60) -> list[dict]:
+    out = []
+    for e in ledger.entries()[-limit:]:
+        p = e.get("payload", {}) or {}
+        out.append({"kind": e.get("kind"), "ts": e.get("ts"),
+                    "payload": p})
+    return list(reversed(out))
+
+
+def build_state(root: Path, cfg: Config) -> dict:
+    data = root / "data"
+    ledger = Ledger(root / cfg.ledger.path)
+    ok, msg = ledger.verify()
+    desk = _read_json(data / "desk.json", {})
+    policy_raw = _read_json(data / "policy.json", {})
+    mem = _read_json(data / "memory.json", {})
+    strategies = _read_json(data / "strategies.json", [])
+    service = _read_json(data / "service.json", {})
+    account = _read_json(root / cfg.ledger.state_path, {})
+
+    tier_int = int(policy_raw.get("tier", int(RiskTier.RESEARCH)))
+    try:
+        tier = RiskTier(tier_int)
+    except ValueError:
+        tier = RiskTier.RESEARCH
+    policy = Policy(
+        tier=tier,
+        risk_per_trade=float(policy_raw.get("risk_per_trade", 0.01)),
+        stop_atr_mult=float(policy_raw.get("stop_atr_mult", 2.0)),
+        target_atr_mult=float(policy_raw.get("target_atr_mult", 4.0)),
+        trade_frequency_cap=float(policy_raw.get("trade_frequency_cap", 1.0)),
+        reasoning=str(policy_raw.get("reasoning", "")),
+    )
+
+    last_research = None
+    last_proposal = None
+    for e in ledger.entries():
+        if e.get("kind") == "research":
+            last_research = e.get("payload")
+        if e.get("kind") == "proposal":
+            last_proposal = e.get("payload")
+
+    desk_trades = _recent_trades(desk)
+    wins = sum(1 for t in desk_trades if t.get("net", 0) > 0)
+    return {
+        "server_time": iso(utcnow()),
+        "symbol": cfg.market.symbol,
+        "timeframe": cfg.market.timeframe,
+        "exchange": cfg.market.exchange,
+        "account_equity": account.get("equity"),
+        "policy": {
+            "tier": int(tier),
+            "tier_name": TIER_NAMES[tier],
+            "effective": policy.effective(),
+            "reasoning": policy.reasoning,
+        },
+        "tiers": {str(int(t)): n for t, n in TIER_NAMES.items()},
+        "desk": {
+            "cash": desk.get("pot"),
+            "position": desk.get("position"),
+            "trades": len(desk_trades),
+            "win_rate": round(wins / len(desk_trades), 3) if desk_trades else None,
+            "autonomy_armed": desk.get("autonomy_armed"),
+            "revoked_reason": desk.get("revoked_reason"),
+            "trades_today": desk.get("trades_today"),
+            "recent_trades": desk_trades[-12:],
+        },
+        "research": last_research,
+        "proposal": last_proposal,
+        "reflection": mem.get("last_reflection"),
+        "memory": {
+            "blacklisted_families": mem.get("blacklisted_families", []),
+            "preferred_families": mem.get("preferred_families", []),
+            "agent_weights": mem.get("agent_weights", {}),
+        },
+        "strategies": [{
+            "name": (s.get("spec") or {}).get("name"),
+            "family": (s.get("spec") or {}).get("family"),
+            "hypothesis": (s.get("spec") or {}).get("hypothesis"),
+            "metrics": (s.get("validation") or {}).get("metrics", {}),
+            "deployed": s.get("deployed"),
+            "registered_at": s.get("registered_at"),
+        } for s in strategies],
+        "ledger": {
+            "ok": ok, "message": msg, "entries": len(ledger.entries()),
+            "scorecard": scorecard(ledger.entries()),
+        },
+        "equity_series": _equity_series(ledger),
+        "recent": _recent(ledger),
+        "service": service,
+    }
+
+
+def _recent_trades(desk: dict) -> list[dict]:
+    out = []
+    for t in desk.get("trades", []) or []:
+        try:
+            out.append({
+                "symbol": t.get("symbol"),
+                "net": float(t.get("net", 0.0)),
+                "reason": t.get("reason"),
+                "entry_ts": t.get("entry_ts"),
+                "exit_ts": t.get("exit_ts"),
+            })
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+# --------------------------------------------------------------------------
+# Actions
+# --------------------------------------------------------------------------
+
+class _Lock:
+    """One autonomous tick at a time, across threads and processes."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._thread_lock = threading.Lock()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def __enter__(self):
+        import fcntl
+        self._thread_lock.acquire()
+        self._fh = self.path.open("w")
+        try:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._fh.close()
+            self._thread_lock.release()
+            raise RuntimeError("a tick is already running")
+        return self
+
+    def __exit__(self, *exc):
+        import fcntl
+        try:
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            self._fh.close()
+            self._thread_lock.release()
+        return False
+
+
+def run_tick(root: Path, cfg: Config, offline: bool = True,
+             tier: Optional[RiskTier] = None) -> dict:
+    from .desk import DeskConfig
+    from .llm import DeepSeekClient, fake_canned, fake_proposal
+    from .runner import tick
+
+    client = DeepSeekClient(
+        fake=(fake_canned if offline else None),
+        max_calls_per_day=60,
+        max_cost_per_day_usd=1.0,
+    )
+    if not client.available():
+        return {"ok": False, "error": "no DEEPSEEK_API_KEY and not in offline mode"}
+
+    policy = PolicyStore(root / "data" / "policy.json").load()
+    eff_tier = tier if tier is not None else policy.tier
+    dcfg = DeskConfig(enabled=True, tier=eff_tier,
+                      min_confidence=policy.effective()["min_confidence"])
+    with _Lock(root / "data" / "tick.lock"):
+        rep = tick(cfg, client, dcfg, root=root, offline=offline,
+                   propose_enabled=True, reflect_enabled=True)
+    return {"ok": True, "report": rep.to_dict()}
+
+
+# --------------------------------------------------------------------------
+# HTTP server
+# --------------------------------------------------------------------------
+
+PAGE = None  # set below by _load_page
+
+
+def _load_page() -> str:
+    return (_HTML_PAGE)
+
+
+class Handler(BaseHTTPRequestHandler):
+    root: Path = Path(".")
+    cfg: Config = Config()
+    offline: bool = True
+
+    def log_message(self, fmt, *args):  # quieter console
+        return
+
+    # ---- helpers ----
+
+    def _json(self, obj: Any, status: int = 200) -> None:
+        body = json.dumps(obj, default=str).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _html(self, text: str) -> None:
+        body = text.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _body(self) -> dict:
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        if not n:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n).decode() or "{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}
+
+    # ---- routes ----
+
+    def do_GET(self) -> None:
+        path = urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            self._html(_load_page())
+        elif path == "/api/state":
+            self._json(build_state(self.root, self.cfg))
+        elif path == "/api/health":
+            import os
+            self._json({"ok": True, "time": iso(utcnow()),
+                        "has_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
+                        "offline": self.offline})
+        else:
+            self._json({"error": "not found"}, 404)
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        try:
+            if path == "/api/tick":
+                b = self._body()
+                out = run_tick(self.root, self.cfg,
+                               offline=bool(b.get("offline", self.offline)))
+                self._json(out)
+            elif path == "/api/reflect":
+                ledger = Ledger(self.root / self.cfg.ledger.path)
+                ref = reflect_and_persist(ledger, PolicyStore(self.root / "data" / "policy.json"))
+                self._json({"ok": True, "reflection": ref.to_dict()})
+            elif path == "/api/tier":
+                b = self._body()
+                if not b.get("confirm"):
+                    self._json({"ok": False, "error": "confirmation required"}, 400)
+                    return
+                try:
+                    tier = RiskTier(int(b.get("tier", 0)))
+                except (TypeError, ValueError):
+                    self._json({"ok": False, "error": "bad tier"}, 400)
+                    return
+                store = PolicyStore(self.root / "data" / "policy.json")
+                pol = store.load()
+                store.save(Policy(tier=tier, risk_per_trade=pol.risk_per_trade,
+                                  stop_atr_mult=pol.stop_atr_mult,
+                                  target_atr_mult=pol.target_atr_mult,
+                                  trade_frequency_cap=pol.trade_frequency_cap,
+                                  reasoning=f"tier set by HUMAN via dashboard to "
+                                            f"{TIER_NAMES[tier]}"))
+                Ledger(self.root / self.cfg.ledger.path).append(
+                    "tier_change", {"tier": int(tier), "name": TIER_NAMES[tier],
+                                    "by": "human", "via": "dashboard"})
+                self._json({"ok": True, "tier": int(tier), "name": TIER_NAMES[tier]})
+            else:
+                self._json({"error": "not found"}, 404)
+        except RuntimeError as e:
+            self._json({"ok": False, "error": str(e)}, 409)
+        except Exception as e:  # noqa: BLE001 - a dashboard must not 500 silently
+            self._json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+
+
+def serve(root: str | Path = ".", host: str = "127.0.0.1", port: int = 8787,
+          cfg: Optional[Config] = None, offline: bool = True) -> int:
+    Handler.root = Path(root).resolve()
+    Handler.cfg = cfg or Config()
+    Handler.offline = offline
+    httpd = ThreadingHTTPServer((host, port), Handler)
+    url = f"http://{host}:{port}"
+    print(f"MAGICWAND dashboard  {url}")
+    print(f"  root    {Handler.root}")
+    print(f"  symbol  {Handler.cfg.market.symbol} @ {Handler.cfg.market.timeframe}")
+    (Handler.root / "data").mkdir(parents=True, exist_ok=True)
+    (Handler.root / "data" / "service.json").write_text(json.dumps({
+        "mode": "offline" if offline else "live",
+        "pid": __import__("os").getpid(),
+        "started_at": iso(utcnow()),
+        "url": url,
+    }, indent=2))
+    print(f"  mode    {'offline (fake model)' if offline else 'live DeepSeek'}")
+    print("  Ctrl-C to stop. Local only — no authentication.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped.")
+    finally:
+        httpd.server_close()
+    return 0
+
+
+try:
+    _HTML_PAGE = open(Path(__file__).with_name("dashboard.html")).read()
+except OSError:  # packaged install without the template
+    _HTML_PAGE = "<h1>MAGICWAND</h1><p>dashboard.html is missing from the package.</p>"

@@ -23,6 +23,7 @@ from magicwand.agents import (AgentVerdict, Claim, parse_verdict, run_all,
 from magicwand.common import Side, utcnow
 from magicwand.config import Config
 from magicwand.desk import AgentDesk, DeskConfig
+from magicwand.gatekeeper import Gatekeeper, Policy, RiskTier
 from magicwand.ledger import scorecard
 from magicwand.llm import BudgetExceeded, DeepSeekClient, Usage, fake_canned
 from magicwand.research import (MarketSnapshot, Source, _parse_rss, build_snapshot,
@@ -124,7 +125,8 @@ class TestInjectionHandling(unittest.TestCase):
         # And the desk refuses without a whitelisted symbol + confidence + config.
         with tempfile.TemporaryDirectory() as d:
             cfg = Config()
-            desk = AgentDesk(cfg, DeskConfig(enabled=False), root=d)
+            desk = AgentDesk(cfg, DeskConfig(enabled=False,
+                                             tier=RiskTier.PAPER_DESK), root=d)
             out = desk.open_trade("BTC-USD", 100.0, 2.0, "news", "evil", 0.05, 1.0)
             self.assertFalse(out["ok"])
 
@@ -178,7 +180,9 @@ class TestDeskWalls(unittest.TestCase):
     def _desk(self, d, **kw):
         cfg = Config()
         cfg.risk.kill_switch = kw.pop("kill", False)
-        dc = DeskConfig(enabled=True, min_confidence=0.8, **kw)
+        # Opt into trading explicitly: the default tier is read-only.
+        dc = DeskConfig(enabled=True, min_confidence=0.8,
+                        tier=RiskTier.PAPER_DESK, **kw)
         desk = AgentDesk(cfg, dc, root=d)
         desk.fund(500.0)
         return desk
@@ -226,7 +230,8 @@ class TestDeskWalls(unittest.TestCase):
             desk.close_trade(82.0, "target", now=now)
             second = desk.open_trade("SOL-USD", 81.0, 2.0, "news", "b", 0.05, 0.9, now=now)
             self.assertFalse(second["ok"])
-            self.assertIn("cap", second["reason"])
+            # Either wall may speak first; both mean "no more trades today".
+            self.assertRegex(second["reason"], "cap|trades today")
 
     def test_kill_switch_stops_desk(self):
         with tempfile.TemporaryDirectory() as d:
@@ -447,7 +452,8 @@ class TestResearchLoop(unittest.TestCase):
             snap = _fixture_snapshot(utcnow().isoformat())
             cyc = rl.run_cycle(cfg, client, price=80.0, atr=2.0, symbol="SOL-USD",
                                snapshot=snap, root=d,
-                               dcfg=DeskConfig(enabled=True, min_confidence=0.80))
+                               dcfg=DeskConfig(enabled=True, min_confidence=0.80,
+                                               tier=RiskTier.PAPER_DESK))
             self.assertIsNotNone(cyc.desk_outcome)
             self.assertFalse(cyc.desk_outcome["ok"])
             self.assertIn("assured", cyc.desk_outcome["reason"])
@@ -463,7 +469,8 @@ class TestResearchLoop(unittest.TestCase):
             snap = _fixture_snapshot(utcnow().isoformat())
             cyc = rl.run_cycle(cfg, client, price=80.0, atr=2.0, symbol="SOL-USD",
                                snapshot=snap, root=d,
-                               dcfg=DeskConfig(enabled=True, min_confidence=0.80))
+                               dcfg=DeskConfig(enabled=True, min_confidence=0.80,
+                                               tier=RiskTier.PAPER_DESK))
             self.assertTrue(cyc.desk_outcome["ok"], cyc.desk_outcome)
             # The parent account file must be untouched by the agent.
             parent = json.loads((Path(d) / cfg.ledger.state_path).read_text())
@@ -492,3 +499,62 @@ class TestResearchLoop(unittest.TestCase):
             track = rl.agent_track_record(led)
             self.assertTrue(track)
             self.assertIn("hit_rate", next(iter(track.values())))
+
+
+# --------------------------------------------------------------------------
+# The gatekeeper: CHIMERA's invariant, applied to money
+# --------------------------------------------------------------------------
+
+class TestGatekeeper(unittest.TestCase):
+    def test_research_tier_cannot_trade(self):
+        g = Gatekeeper(Policy(tier=RiskTier.RESEARCH))
+        v = g.check_order(pot_fraction=0.0, trade_pct_of_pot=0.0,
+                          trades_today=0, confidence=1.0, symbol_whitelisted=True)
+        self.assertFalse(v.allowed)
+        self.assertIn("tier", v.reason)
+
+    def test_agent_cannot_raise_its_own_tier(self):
+        g = Gatekeeper(Policy(tier=RiskTier.PAPER_DESK))
+        v = g.check_tier_request(RiskTier.SCALED_DESK, from_human=False)
+        self.assertFalse(v.allowed)
+        self.assertIn("never mint permissions", " ".join(str(v.reason).split()))
+        # The same request WITH a human is fine.
+        ok = g.check_tier_request(RiskTier.SCALED_DESK, from_human=True)
+        self.assertTrue(ok.allowed)
+
+    def test_live_tier_is_refused_outright(self):
+        g = Gatekeeper(Policy(tier=RiskTier.LIVE))
+        v = g.check_order(pot_fraction=0.05, trade_pct_of_pot=0.05,
+                          trades_today=0, confidence=1.0, symbol_whitelisted=True)
+        self.assertFalse(v.allowed)
+
+    def test_size_ceiling_enforced(self):
+        g = Gatekeeper(Policy(tier=RiskTier.PAPER_DESK))
+        v = g.check_order(pot_fraction=0.10, trade_pct_of_pot=0.50,
+                          trades_today=0, confidence=0.9, symbol_whitelisted=True)
+        self.assertFalse(v.allowed)
+        self.assertIn("size", v.reason)
+
+    def test_pot_ceiling_enforced(self):
+        g = Gatekeeper(Policy(tier=RiskTier.PAPER_DESK))
+        v = g.check_order(pot_fraction=0.50, trade_pct_of_pot=0.05,
+                          trades_today=0, confidence=0.9, symbol_whitelisted=True)
+        self.assertFalse(v.allowed)
+
+    def test_evolved_policy_cannot_exceed_tunable_bounds(self):
+        p = Policy(tier=RiskTier.PAPER_DESK, risk_per_trade=0.99,
+                   stop_atr_mult=100.0)
+        eff = p.effective()
+        self.assertLessEqual(eff["risk_per_trade"], 0.02)
+        self.assertLessEqual(eff["stop_atr_mult"], 4.0)
+
+    def test_default_desk_is_read_only(self):
+        """An operator must opt IN to trading. Default is research."""
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Config()
+            dcfg = DeskConfig()          # defaults
+            self.assertEqual(dcfg.tier, RiskTier.RESEARCH)
+            desk = AgentDesk(cfg, dcfg, root=d)
+            desk.fund(500.0)
+            out = desk.open_trade("SOL-USD", 80.0, 2.0, "news", "x", 0.05, 0.99)
+            self.assertFalse(out["ok"])

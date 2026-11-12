@@ -106,6 +106,7 @@ def run_backtest(bars: list[Bar], cfg: Config, strategy: Strategy,
     # signal_delay=1 is the honest baseline: no information from the future.
     queue: list[tuple[int, Intent]] = []
     warm = strategy.warmup()
+    strategy.prepare(bars)   # compute indicator series once, causally
 
     def due(i: int) -> Optional[Intent]:
         """Pop the oldest signal whose execution bar has arrived."""

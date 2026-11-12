@@ -76,7 +76,7 @@ wishes but cannot lie about what it granted.
 ## Try it
 
 ```bash
-python3 -m unittest discover -s tests -v   # 64 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 105 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -176,6 +176,74 @@ Known limits, stated plainly:
 - Agent verdicts are graded on price direction over the stated horizon. That is
   a coarse measure of a nuanced claim, and coarse honesty beats fine narrative.
 
+## The operator console
+
+```bash
+python3 wand.py serve                  # http://127.0.0.1:8787
+python3 wand.py serve --live           # use the real DeepSeek API
+```
+
+A local, dependency-free dashboard (one HTML page served by the same Python)
+that reads the same files the bot writes:
+
+- **Research** — every reader's stance, confidence and thesis, plus the
+  synthesizer's verdict
+- **Desk** — sandbox cash, open position, recent round trips, autonomy status
+- **Equity** — the mark-to-market curve
+- **Reflection** — what the system learned and what it changed
+- **Ledger feed** — the hash chain, live; a broken chain shows in red
+- **Risk tiers** — a human-only control, recorded in the ledger
+- Buttons: run one tick, run reflection
+
+It binds to `127.0.0.1` and has no authentication: it is an operator console,
+not a public service. Use a managed background job to keep it running, or a
+systemd unit if you want it persistent. The tick endpoint holds a lock file, so
+double-clicking "Run one tick" cannot double-trade.
+
+## Risk tiers — the CHIMERA invariant, ported to money
+
+This project borrows the best idea from CHIMERA, the pentest IDE in
+`../chimera`: **risk ceilings come from the template, never from the AI.** There,
+a Gatekeeper enforces a tool's risk tier at the command level — an agent could
+name itself anything and still never mint a permission. Here, the same rule
+applies to capital:
+
+| Tier | Ceiling | Who can set it |
+|---|---|---|
+| `research` | read-only: analyse, propose, validate, never trade | default |
+| `paper_desk` | 10% pot, ≤10% per trade, 1 trade/day | human |
+| `scaled_desk` | 25% pot, ≤20% per trade, 3 trades/day | human |
+| `live` | refused outright — **no live broker exists** | nobody |
+
+Every order passes `Gatekeeper.check_order()`. It is a pure function of the
+policy and the proposed order, it cannot place orders, and there is no bypass
+flag. `AgentDesk` calls it before the broker or the order never happens. Agents
+may *propose* a tier change; only a human action writes one, and that action is
+recorded in the ledger as `tier_change` with `by: human`.
+
+The default tier is **read-only**. You must opt in to letting anything trade.
+
+## Reflection — why this is not a scripted bot
+
+A script executes steps. An autonomous system changes its own behaviour because
+of what it learned. `wand.py` reflects on its ledger after every tick:
+
+- per-family expectancy and hit rate → **demote** families that lose after costs,
+  **prefer** those that do not
+- per-agent calibration → scale each reader's influence on the synthesizer
+- stop-hit vs target-hit ratio → widen stops if they are being clipped
+
+Then it adjusts `risk_per_trade`, `stop_atr_mult`, `target_atr_mult` and
+`trade_frequency_cap` — **within human-set bounds and nowhere else**
+(`TUNABLE_BOUNDS` in `gatekeeper.py`). It cannot raise its tier, cannot change
+the fees it pays, and cannot change the gate.
+
+The reflection is deliberately arithmetic, not an LLM opinion. Grading yourself
+with the same instrument that produced the belief is how trading bots flatter
+themselves into ruin. Demoted families are refused at proposal time, and the
+tuning sizes future risk from the families it intends to *keep* trading — not
+from dead strategies' history.
+
 ## What it found on day one
 
 Run against 300 hourly SOL-USD candles (2026-10-30 → 2026-11-11):
@@ -244,6 +312,13 @@ reality check, and then fund it from savings, not from hope.
 - [x] Veto-only synthesizer with per-agent track-record weighting
 - [x] Sandboxed Agent Desk: autonomous trading inside hard walls, revocable by record
 - [x] BYOK DeepSeek client with daily call and cost budgets
+- [x] Self-invented strategies from an audited catalog (no agent-written code)
+- [x] Validation gate: realistic costs, 2x costs, sample floor, buy-and-hold
+      exposure benchmark, out-of-sample holdout, shuffled-data null test
+- [x] Unattended autonomous runner with adaptive revalidation
+- [x] Risk tiers + gatekeeper (CHIMERA invariant), human-only escalation
+- [x] Reflection engine with bounded self-tuning and family demotion
+- [x] Local zero-dependency operator dashboard
 - [ ] Longer history (the free hourly window is only ~12 days)
 - [ ] Walk-forward / out-of-sample split, so tuning cannot cheat
 - [ ] Portfolio-level risk across several symbols

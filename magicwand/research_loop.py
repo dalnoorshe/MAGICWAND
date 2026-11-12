@@ -158,11 +158,14 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
               subreddit: str = "solana", dcfg: Optional[DeskConfig] = None,
               root: str | Path = ".", snapshot: Optional[research_mod.MarketSnapshot] = None,
               agents: Optional[list[str]] = None,
-              now: Optional[datetime] = None) -> ResearchCycle:
+              now: Optional[datetime] = None,
+              ledger: Optional[Ledger] = None) -> ResearchCycle:
     root = Path(root)
     now = now or utcnow()
     symbol = symbol or cfg.market.symbol
-    ledger = Ledger(root / cfg.ledger.path)
+    # Share one Ledger per call: several instances racing on one file is what
+    # broke the hash chain, and the chain is the thing we cannot afford to lose.
+    ledger = ledger or Ledger(root / cfg.ledger.path)
     base = symbol.split("-")[0] if "-" in symbol else symbol
 
     if snapshot is None:

@@ -33,6 +33,7 @@ class StrategyConfig:
     fast: int = 12
     slow: int = 48
     atr_period: int = 14
+    z_entry: float = 1.5         # mean_revert: entry threshold in std devs
     stop_atr: float = 2.0        # stop distance = stop_atr * ATR
     target_atr: float = 4.0      # take profit distance (0 disables)
     max_hold_bars: int = 72      # time stop: 72h on the 1h timeframe

@@ -20,6 +20,7 @@ it flatter itself?
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -69,17 +70,47 @@ class Ledger:
     # ---- writing ----
 
     def append(self, kind: str, payload: dict, when: Optional[datetime] = None) -> dict:
+        """Append one entry, keeping the chain valid under concurrency.
+
+        Sequence state lives in memory, so two Ledger objects on the same file
+        will otherwise write duplicate sequence numbers and break the chain.
+        That happened here (several components open the ledger within one
+        tick). We take an exclusive file lock and resync the tail from disk
+        before choosing the next sequence number, so the chain is authoritative
+        on disk rather than in any process's memory.
+        """
         ts = iso(when or utcnow())
-        h = self._hash(self._seq, self._last_hash, ts, kind, payload)
-        entry = {"seq": self._seq, "prev": self._last_hash, "ts": ts,
-                 "kind": kind, "payload": payload, "hash": h}
-        with self.path.open("a") as f:
-            f.write(json.dumps(entry, sort_keys=True) + "\n")
-            f.flush()
-            os.fsync(f.fileno())  # survive a crash mid-run
+        with self.path.open("a+") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                seq, prev = self._resync_from(f)
+                h = self._hash(seq, prev, ts, kind, payload)
+                entry = {"seq": seq, "prev": prev, "ts": ts, "kind": kind,
+                         "payload": payload, "hash": h}
+                f.write(json.dumps(entry, sort_keys=True) + "\n")
+                f.flush()
+                os.fsync(f.fileno())  # survive a crash mid-run
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         self._last_hash = h
-        self._seq += 1
+        self._seq = seq + 1
         return entry
+
+    def _resync_from(self, f) -> tuple[int, str]:
+        """Read the true tail of the file and return (next_seq, last_hash)."""
+        last: Optional[dict] = None
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                last = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+        if not last:
+            return 0, GENESIS
+        return int(last.get("seq", 0)) + 1, str(last.get("hash", GENESIS))
 
     # ---- reading ----
 

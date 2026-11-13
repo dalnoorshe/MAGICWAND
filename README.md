@@ -406,6 +406,27 @@ If you want visible movement more often, run a shorter timeframe (`5m`, `15m`).
 The strategy's statistics get worse, because costs are paid per trade and there
 are more trades — the chart is not the point.
 
+### One market per instance
+
+The chart, the research and the strategy all follow a single symbol. Today that
+is **SOL-USD** by default, and three markets are verified end to end —
+`SOL-USD`, `BTC-USD`, `ETH-USD` (each needs a Coinbase pair, a Binance perp and
+a subreddit; membership of that list is a claim, not a preference).
+
+Switch it in **Settings → Market**. It applies on the next tick, no restart, and
+is refused while the desk holds an open position — changing market mid-trade
+would orphan the position. The social reader follows the market automatically
+(BTC → r/Bitcoin, ETH → r/ethtrader); without that mapping it would have kept
+reading r/solana for a Bitcoin chart, which is the kind of silent mismatch that
+makes a reader look confidently wrong.
+
+**Multiple markets at once is not implemented.** The desk holds one position
+(`max_open_positions = 1`), the ledger records one symbol per tick, and the
+console draws one chart. Running BTC and ETH simultaneously needs portfolio
+state, per-symbol risk, and a multi-chart layout — it is on the roadmap, not in
+the build. The honest way to run two markets today is two instances with
+separate `data/` directories, which the project does not support yet either.
+
 ### Offline mode is honest about being offline
 
 With no key connected the console runs a **deterministic stand-in model**. It is

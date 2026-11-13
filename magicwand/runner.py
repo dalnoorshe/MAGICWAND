@@ -58,6 +58,18 @@ class TickReport:
         return asdict(self)
 
 
+def _resolve_symbol(cfg: Config, root: Path) -> str:
+    """The market to trade this tick. Settings win; config is the fallback."""
+    try:
+        from .settings_store import SettingsStore
+        st = SettingsStore(root / "data" / "settings.json").load()
+        if st.symbol:
+            return st.symbol
+    except Exception:  # noqa: BLE001 - settings are a preference, not a dependency
+        pass
+    return cfg.market.symbol
+
+
 def _total_equity(cfg: Config, root: Path) -> float:
     """Real account equity, falling back to the configured starting value.
 
@@ -207,13 +219,18 @@ def _maybe_propose(cfg: Config, client: DeepSeekClient, ledger: Ledger,
 
 def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
          root: str | Path = ".", propose_enabled: bool = True,
-         subreddit: str = "solana",
+         subreddit: Optional[str] = None,
          snapshot: Optional[research_mod.MarketSnapshot] = None,
          offline: bool = False, allow_stale_strategy: bool = False,
          reflect_enabled: bool = True, vision: bool = True) -> TickReport:
     root = Path(root)
     ledger = Ledger(root / cfg.ledger.path)
-    symbol = cfg.market.symbol
+    # Resolve the symbol per tick from the operator's settings, so switching
+    # market does not require restarting the server. A desk position pins the
+    # symbol: changing market while holding something would orphan the position.
+    symbol = _resolve_symbol(cfg, root)
+    if subreddit is None:
+        subreddit = research_mod.subreddit_for(symbol)
     bars = data_mod.fetch(cfg.market.exchange, symbol, cfg.market.timeframe,
                           cfg.market.candles, seed=cfg.seed)
     if not bars:

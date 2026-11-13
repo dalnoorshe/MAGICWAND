@@ -42,6 +42,10 @@ from .settings_store import (SettingsError, SettingsStore, load_models_cache,
 # /models is the source of truth, and the picker is built from it.
 _FALLBACK_MODEL_IDS = {"deepseek-flash", "deepseek-v4-pro"}
 
+# Markets this build has been checked against (Coinbase pair + Binance perp +
+# a subreddit). Membership of this set is a claim, not a preference.
+_SUPPORTED_SYMBOLS = ("BTC-USD", "ETH-USD", "SOL-USD")
+
 
 def get_backups(root: Path, cfg: Config):
     from .backup_scheduler import get as _get
@@ -431,6 +435,39 @@ class Handler(BaseHTTPRequestHandler):
         # Save fields INDEPENDENTLY. The model picker posts without a key, and
         # an earlier version treated that as "clear the key" — silently wiping
         # the operator's credential when they changed model.
+        # Symbol can be changed from the console. Two guards: it must be a
+        # supported market, and the desk must not be holding a position —
+        # switching market mid-trade would orphan the position.
+        sym = b.get("symbol")
+        if sym:
+            sym = str(sym).strip().upper()
+            if sym not in _SUPPORTED_SYMBOLS:
+                self._json({"ok": False,
+                            "error": f"unsupported symbol {sym!r}; "
+                                     f"choose one of {sorted(_SUPPORTED_SYMBOLS)}"}, 400)
+                return
+            try:
+                ds = json.loads((self.root / "data" / "desk.json").read_text())
+                if ds.get("position"):
+                    self._json({"ok": False,
+                                "error": "the desk holds an open position; "
+                                         "close it before changing market"}, 409)
+                    return
+            except (OSError, json.JSONDecodeError):
+                pass
+            cur_sym = st.load()
+            cur_sym.symbol = sym
+            st.save(cur_sym)
+            self.cfg.market.symbol = sym      # applies on the next tick
+            Ledger(self.root / self.cfg.ledger.path).append(
+                "settings_change", {"key": "symbol", "value": sym,
+                                    "by": "human", "via": "dashboard"})
+            print(f"[settings {utcnow():%H:%M:%S}] market set to {sym} "
+                  f"(social now reads r/{__import__('magicwand.research', fromlist=['x']).subreddit_for(sym)})",
+                  flush=True)
+            self._json({"ok": True, "settings": st.public_dict(), "symbol": sym})
+            return
+
         key = b.get("key")
         if key is not None and str(key).strip():
             try:

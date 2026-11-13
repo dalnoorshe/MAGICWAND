@@ -301,6 +301,20 @@ def fetch_news(hours: int = 24, feeds: Optional[dict] = None,
 
 SUBREDDITS = ["solana", "CryptoCurrency", "Bitcoin", "ethtrader"]
 
+# Which community to read for which market. Without this, switching the symbol
+# to BTC would keep reading r/solana — a real mismatch that would silently
+# poison the social reader.
+SUBREDDIT_FOR_SYMBOL = {
+    "SOL-USD": "solana",
+    "BTC-USD": "Bitcoin",
+    "ETH-USD": "ethtrader",
+}
+
+
+def subreddit_for(symbol: str) -> str:
+    """Best community for a symbol, falling back to the broad one."""
+    return SUBREDDIT_FOR_SYMBOL.get(symbol.upper(), "CryptoCurrency")
+
 
 def fetch_social(subreddit: str = "solana", samples: int = 8) -> Source:
     """Post volume with a z-score vs its own trailing window, plus title samples.

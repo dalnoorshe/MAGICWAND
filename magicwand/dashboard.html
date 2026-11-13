@@ -250,6 +250,20 @@
     </div>
     <div class="modal-body">
 
+    <div class="section-label">Market</div>
+    <div style="display:flex; gap:6px; margin-bottom:6px">
+      <select id="symbolSelect" style="flex:1; background:#0d0f14; color:#e6e9ef;
+              border:1px solid #242a36; border-radius:5px; padding:8px 10px; font:inherit">
+        <option value="SOL-USD">SOL-USD — Solana</option>
+        <option value="BTC-USD">BTC-USD — Bitcoin</option>
+        <option value="ETH-USD">ETH-USD — Ethereum</option>
+      </select>
+    </div>
+    <div class="dimmer" id="symbolInfo" style="margin:-2px 0 12px">
+      One market per instance. Changes apply on the next tick; refused while a
+      position is open.
+    </div>
+
     <div class="section-label">Model</div>
     <div style="display:flex; gap:6px; margin-bottom:12px">
       <select id="modelSelect" style="flex:1; background:#0d0f14; color:#e6e9ef;
@@ -709,6 +723,7 @@ async function loadSettings() {
     $("keyInput").placeholder = "sk-...";
   }
   $("keyInput").value = "";
+  if ($("symbolSelect") && st.symbol) $("symbolSelect").value = st.symbol;
   $("modalMode").textContent = st.has_key
     ? `live · ${st.model}` : "offline stub — connect a key";
   // Model picker from the cached catalogue (no extra call on open).
@@ -725,6 +740,21 @@ async function loadSettings() {
 }
 
 $("btnSettings").onclick = openSettings;
+$("symbolSelect").onchange = async () => {
+  const sym = $("symbolSelect").value;
+  const r = await post("/api/settings", {symbol: sym});
+  if (!r.ok) {
+    toast("cannot switch market: " + r.error);
+    const st = await (await fetch("/api/settings")).json();
+    $("symbolSelect").value = st.symbol || "SOL-USD";
+    return;
+  }
+  $("symbolInfo").textContent =
+    `switched to ${r.symbol} — takes effect on the next tick`;
+  toast(`market set to ${r.symbol}`);
+  refresh();
+};
+
 $("btnSaveKey").onclick = async () => {
   const key = $("keyInput").value.trim();
   if (!key) { toast("paste a key first"); return; }

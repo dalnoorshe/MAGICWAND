@@ -406,6 +406,26 @@ If you want visible movement more often, run a shorter timeframe (`5m`, `15m`).
 The strategy's statistics get worse, because costs are paid per trade and there
 are more trades — the chart is not the point.
 
+### Who is allowed to change what
+
+Three different kinds of "the AI changes the dashboard", deliberately separated:
+
+| Change | Who may do it | Why |
+|---|---|---|
+| Add a market, switch venue, change model, tune limits | **a human** (console) or a human asking the coding agent | configuration, auditable, reversible |
+| Propose a market or a strategy | **the research model** | recorded in the ledger as a proposal |
+| Add a market autonomously, mid-record | **nobody** | see below |
+
+**Why the model may not retarget what the system watches.** If the agent can add
+the market that "looks profitable", it will add whatever just went up. That is
+selection bias, and it destroys the one thing this project is for: a track record
+that means something. A ledger that says "8 of 12 readers were right" is only
+worth reading if the system could not choose which questions it was asked.
+
+So the rule is: **the model judges what it is shown; the operator chooses what it
+sees.** An agent may propose a market with a reason, and that proposal is logged
+— but the switching happens on a human action.
+
 ### One market per instance
 
 The chart, the research and the strategy all follow a single symbol. Today that
@@ -413,7 +433,22 @@ is **SOL-USD** by default, and three markets are verified end to end —
 `SOL-USD`, `BTC-USD`, `ETH-USD` (each needs a Coinbase pair, a Binance perp and
 a subreddit; membership of that list is a claim, not a preference).
 
-Switch it in **Settings → Market**. It applies on the next tick, no restart, and
+**Gold is available as PAXG**, not as XAU: no crypto venue lists spot gold, but
+PAXG (1 token ≈ 1 troy oz) is on Coinbase, Kraken and Binance at ~$3,875, so it
+works with every reader. It is a *proxy*: it carries token risk and can trade off
+the spot price. Real XAU/USD needs a forex broker — see `docs/PLATFORMS.md`.
+
+Markets live in one table (`magicwand/markets.py`), so adding one is a data
+change: symbol, Coinbase product, Kraken pair, Binance perp, subreddit. Nothing
+else needs editing, and the desk whitelist and console picker follow it
+automatically.
+
+**The candle venue is switchable too** — Settings → Market → Coinbase or Kraken.
+Derivatives (funding, open interest, positioning) stay on Binance regardless,
+because that is where those public endpoints exist; the snapshot labels which
+source each number came from.
+
+Switch markets in **Settings → Market**. It applies on the next tick, no restart, and
 is refused while the desk holds an open position — changing market mid-trade
 would orphan the position. The social reader follows the market automatically
 (BTC → r/Bitcoin, ETH → r/ethtrader); without that mapping it would have kept

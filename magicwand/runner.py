@@ -58,6 +58,19 @@ class TickReport:
         return asdict(self)
 
 
+def _resolve_exchange(cfg: Config, root: Path) -> str:
+    """Candle venue for this tick: the operator's setting, or the config default."""
+    try:
+        from .settings_store import SettingsStore
+        st = SettingsStore(root / "data" / "settings.json").load()
+        # Only an explicit choice overrides the config; "" means unset.
+        if st.exchange in ("coinbase", "kraken"):
+            return st.exchange
+    except Exception:  # noqa: BLE001
+        pass
+    return cfg.market.exchange
+
+
 def _resolve_symbol(cfg: Config, root: Path) -> str:
     """The market to trade this tick. Settings win; config is the fallback."""
     try:
@@ -228,6 +241,8 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
     # Resolve the symbol per tick from the operator's settings, so switching
     # market does not require restarting the server. A desk position pins the
     # symbol: changing market while holding something would orphan the position.
+    exchange = _resolve_exchange(cfg, root)
+    cfg.market.exchange = exchange          # used by the data fetch below
     symbol = _resolve_symbol(cfg, root)
     if subreddit is None:
         subreddit = research_mod.subreddit_for(symbol)

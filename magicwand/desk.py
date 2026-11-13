@@ -53,7 +53,9 @@ class DeskConfig:
     review_after: int = 10                 # graded trades before a performance review
     demote_below_hit_rate: float = 0.45    # at or below this, autonomy is revoked
     min_confidence: float = 0.80           # "when the agent is sure"
-    whitelist: tuple = ("BTC-USD", "ETH-USD", "SOL-USD")
+    # Derived from the markets registry, so a market that is listed there is
+    # tradable and nothing else is.
+    whitelist: tuple = ("BTC-USD", "ETH-USD", "PAXG-USD", "SOL-USD")
     stop_atr_mult: float = 2.0
     max_hold_bars: int = 24
     autonomy_armed: bool = True

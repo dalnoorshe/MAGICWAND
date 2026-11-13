@@ -205,11 +205,17 @@ def load_bars(path: Path) -> list[Bar]:
 def fetch(exchange: str, symbol: str, timeframe: str = "1h",
           candles: int = 300, seed: int = 7,
           cache_root: str | Path = ".") -> list[Bar]:
-    """One entry point the rest of the app uses."""
+    """One entry point the rest of the app uses.
+
+    Canonical symbols ("PAXG-USD") are translated to each venue's own naming
+    ("PAXG-USD" on Coinbase, "PAXGUSD" on Kraken) by the markets registry.
+    """
     if exchange == "coinbase":
-        bars = coinbase_candles(symbol, timeframe, candles)
+        from .markets import coinbase_product
+        bars = coinbase_candles(coinbase_product(symbol), timeframe, candles)
     elif exchange == "kraken":
-        bars = kraken_candles(symbol, timeframe, candles)
+        from .markets import kraken_pair
+        bars = kraken_candles(kraken_pair(symbol), timeframe, candles)
     elif exchange == "synthetic":
         bars = synthetic_bars(candles, seed=seed, timeframe=timeframe)
     else:

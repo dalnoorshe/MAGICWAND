@@ -37,6 +37,9 @@ class Settings:
     autotick_seconds: int = 900
     subreddit: str = "solana"
     symbol: str = "SOL-USD"
+    # Candle feed. EMPTY means "not chosen" — a default here would silently
+    # override an explicit config choice (it did: synthetic became coinbase).
+    exchange: str = ""
     # Backups: on by default, every 12h, keep the newest 14.
     auto_backup: bool = True
     backup_interval_hours: float = 12.0
@@ -85,6 +88,7 @@ class SettingsStore:
             autotick_seconds=int(d.get("autotick_seconds", 900)),
             subreddit=str(d.get("subreddit", "solana")),
             symbol=str(d.get("symbol", "SOL-USD")),
+            exchange=str(d.get("exchange", "")),
             auto_backup=bool(d.get("auto_backup", True)),
             backup_interval_hours=float(d.get("backup_interval_hours", 12.0)),
             backup_keep=int(d.get("backup_keep", 14)),
@@ -98,6 +102,7 @@ class SettingsStore:
             "autotick_seconds": int(s.autotick_seconds),
             "subreddit": s.subreddit,
             "symbol": s.symbol,
+            "exchange": s.exchange or "coinbase",   # display default only
             "auto_backup": bool(s.auto_backup),
             "backup_interval_hours": float(s.backup_interval_hours),
             "backup_keep": int(s.backup_keep),
@@ -138,15 +143,20 @@ class SettingsStore:
 
     def public_dict(self) -> dict:
         """What the browser is allowed to see. No secrets, ever."""
+        from .markets import MARKETS
         s = self.load()
         return {
             "model": s.model,
             "autotick_seconds": s.autotick_seconds,
             "subreddit": s.subreddit,
             "symbol": s.symbol,
+            "exchange": s.exchange or "coinbase",   # display default only
             "auto_backup": bool(s.auto_backup),
             "backup_interval_hours": float(s.backup_interval_hours),
             "backup_keep": int(s.backup_keep),
+            "markets": [{"symbol": m.symbol, "name": m.name, "note": m.note,
+                         "exchange_ok": m.supports(s.exchange)}
+                        for m in MARKETS.values()],
             "has_key": bool(s.effective_key()),
             "key_hint": s.masked_key(),
             "key_source": s.key_source(),

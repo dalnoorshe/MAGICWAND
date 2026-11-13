@@ -252,11 +252,14 @@
 
     <div class="section-label">Market</div>
     <div style="display:flex; gap:6px; margin-bottom:6px">
-      <select id="symbolSelect" style="flex:1; background:#0d0f14; color:#e6e9ef;
+      <select id="symbolSelect" style="flex:2; background:#0d0f14; color:#e6e9ef;
               border:1px solid #242a36; border-radius:5px; padding:8px 10px; font:inherit">
         <option value="SOL-USD">SOL-USD — Solana</option>
-        <option value="BTC-USD">BTC-USD — Bitcoin</option>
-        <option value="ETH-USD">ETH-USD — Ethereum</option>
+      </select>
+      <select id="exchangeSelect" style="flex:1; background:#0d0f14; color:#e6e9ef;
+              border:1px solid #242a36; border-radius:5px; padding:8px 10px; font:inherit">
+        <option value="coinbase">Coinbase</option>
+        <option value="kraken">Kraken</option>
       </select>
     </div>
     <div class="dimmer" id="symbolInfo" style="margin:-2px 0 12px">
@@ -723,7 +726,13 @@ async function loadSettings() {
     $("keyInput").placeholder = "sk-...";
   }
   $("keyInput").value = "";
+  if (st.markets) {
+    $("symbolSelect").innerHTML = st.markets.map(m =>
+      `<option value="${esc(m.symbol)}">${esc(m.symbol)} — ${esc(m.name)}`
+      + `${m.note ? " (gold proxy)" : ""}</option>`).join("");
+  }
   if ($("symbolSelect") && st.symbol) $("symbolSelect").value = st.symbol;
+  if ($("exchangeSelect") && st.exchange) $("exchangeSelect").value = st.exchange;
   $("modalMode").textContent = st.has_key
     ? `live · ${st.model}` : "offline stub — connect a key";
   // Model picker from the cached catalogue (no extra call on open).
@@ -752,6 +761,19 @@ $("symbolSelect").onchange = async () => {
   $("symbolInfo").textContent =
     `switched to ${r.symbol} — takes effect on the next tick`;
   toast(`market set to ${r.symbol}`);
+  refresh();
+};
+
+$("exchangeSelect").onchange = async () => {
+  const r = await post("/api/settings", {exchange: $("exchangeSelect").value});
+  if (!r.ok) {
+    toast("cannot switch feed: " + r.error);
+    const st = await (await fetch("/api/settings")).json();
+    $("exchangeSelect").value = st.exchange || "coinbase";
+    return;
+  }
+  toast("candle feed set to " + r.exchange);
+  $("symbolInfo").textContent = `feed: ${r.exchange}`;
   refresh();
 };
 

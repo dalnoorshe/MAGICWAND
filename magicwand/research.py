@@ -147,7 +147,8 @@ class MarketSnapshot:
 
 def fetch_derivatives(symbol: str = "BTC") -> Source:
     """Funding, retail vs top-trader positioning, OI change, taker pressure."""
-    sym = f"{symbol.upper()}USDT"
+    from .markets import binance_perp
+    sym = binance_perp(symbol) if "-" in symbol else f"{symbol.upper()}USDT"
     data: dict[str, Any] = {}
     parts_ok = 0
 
@@ -301,19 +302,14 @@ def fetch_news(hours: int = 24, feeds: Optional[dict] = None,
 
 SUBREDDITS = ["solana", "CryptoCurrency", "Bitcoin", "ethtrader"]
 
-# Which community to read for which market. Without this, switching the symbol
-# to BTC would keep reading r/solana — a real mismatch that would silently
-# poison the social reader.
-SUBREDDIT_FOR_SYMBOL = {
-    "SOL-USD": "solana",
-    "BTC-USD": "Bitcoin",
-    "ETH-USD": "ethtrader",
-}
-
-
 def subreddit_for(symbol: str) -> str:
-    """Best community for a symbol, falling back to the broad one."""
-    return SUBREDDIT_FOR_SYMBOL.get(symbol.upper(), "CryptoCurrency")
+    """Community for a market, taken from the markets registry.
+
+    Without this mapping, switching the symbol to BTC would keep reading
+    r/solana — a silent mismatch that makes a reader look confidently wrong.
+    """
+    from .markets import subreddit_for as _s
+    return _s(symbol)
 
 
 def fetch_social(subreddit: str = "solana", samples: int = 8) -> Source:

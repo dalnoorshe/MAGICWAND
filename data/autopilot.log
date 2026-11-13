@@ -191,3 +191,4 @@
 [autopilot 12:21:03] tick 1: research: 5/5 readers reported; evidence -0.40; VETO by derivatives, news, onchain | idea 'sol_neg_funding_short_squeeze_break' refused: near-duplicate of sol_f
 [autopilot 12:36:35] tick 2: research: 5/5 readers reported; evidence -0.42; VETO by derivatives, news, onchain | idea 'sol_capitulation_reversion' refused: near-duplicate of offline_mean_r
 [autopilot 12:52:07] tick 3: research: 5/5 readers reported; evidence -0.34; VETO by news, onchain | strategy 'sol_oi_flush_trend_resume' rejected: REJECTED: not profitable at realistic cos
+[autopilot 13:07:32] tick 4: graded 12 agent claim(s) | research: 4/5 readers reported; 1 degraded; evidence -0.46; VETO by derivatives, news, onchain | idea 'sol_negative_funding_short_squ

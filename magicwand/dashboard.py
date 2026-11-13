@@ -42,9 +42,17 @@ from .settings_store import (SettingsError, SettingsStore, load_models_cache,
 # /models is the source of truth, and the picker is built from it.
 _FALLBACK_MODEL_IDS = {"deepseek-flash", "deepseek-v4-pro"}
 
-# Markets this build has been checked against (Coinbase pair + Binance perp +
-# a subreddit). Membership of this set is a claim, not a preference.
-_SUPPORTED_SYMBOLS = ("BTC-USD", "ETH-USD", "SOL-USD")
+# Markets this build has been checked against. The registry is the source of
+# truth; this is the tuple the dashboard validates against.
+from .markets import symbols as _market_symbols  # noqa: E402
+
+_SUPPORTED_SYMBOLS = tuple(_market_symbols())
+
+
+def _market_on_exchange(symbol: str, exchange: str) -> bool:
+    from .markets import get as _mget
+    m = _mget(symbol)
+    return bool(m and m.supports(exchange))
 
 
 def get_backups(root: Path, cfg: Config):
@@ -438,9 +446,37 @@ class Handler(BaseHTTPRequestHandler):
         # Symbol can be changed from the console. Two guards: it must be a
         # supported market, and the desk must not be holding a position —
         # switching market mid-trade would orphan the position.
+        ex = b.get("exchange")
+        if ex:
+            ex = str(ex).strip().lower()
+            from .markets import for_exchange
+            if ex not in ("coinbase", "kraken"):
+                self._json({"ok": False, "error": "exchange must be coinbase or kraken"}, 400)
+                return
+            cur = st.load()
+            if not _market_on_exchange(cur.symbol, ex):
+                self._json({"ok": False,
+                            "error": f"{cur.symbol} is not available on {ex}; "
+                                     f"available: {for_exchange(ex)}"}, 400)
+                return
+            cur.exchange = ex
+            st.save(cur)
+            self.cfg.market.exchange = ex
+            Ledger(self.root / self.cfg.ledger.path).append(
+                "settings_change", {"key": "exchange", "value": ex,
+                                    "by": "human", "via": "dashboard"})
+            print(f"[settings {utcnow():%H:%M:%S}] candle feed set to {ex}", flush=True)
+            self._json({"ok": True, "settings": st.public_dict(), "exchange": ex})
+            return
+
         sym = b.get("symbol")
         if sym:
             sym = str(sym).strip().upper()
+            cur_ex = st.load().exchange
+            if not _market_on_exchange(sym, cur_ex):
+                self._json({"ok": False,
+                            "error": f"{sym} has no feed on {cur_ex}"}, 400)
+                return
             if sym not in _SUPPORTED_SYMBOLS:
                 self._json({"ok": False,
                             "error": f"unsupported symbol {sym!r}; "

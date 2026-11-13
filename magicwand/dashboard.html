@@ -142,6 +142,30 @@
   }
   .drawer-body { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; }
   .drawer-foot { flex: 0 0 auto; padding: 10px 14px 14px; border-top: 1px solid #242a36; }
+  .bubble-row { display: flex; margin: 8px 0; }
+  .bubble-row.mine { justify-content: flex-end; }
+  .bubble {
+    max-width: 86%; padding: 8px 11px; border-radius: 10px;
+    font-size: 12.5px; line-height: 1.5; white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .bubble.mine {
+    background: #16283f; border: 1px solid #24405f; border-top-right-radius: 3px;
+  }
+  .bubble.theirs {
+    background: #171b24; border: 1px solid #242a36; border-top-left-radius: 3px;
+  }
+  .bubble .who {
+    display: block; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+    color: #5c6577; margin-bottom: 3px;
+  }
+  .bubble.mine .who { color: #6ea8fe; }
+  .bubble.theirs .who { color: #b98cff; }
+  .bubble code {
+    background: #0b0d12; padding: 1px 4px; border-radius: 3px; font-size: 12px;
+  }
+  .bubble ul { margin: 4px 0 4px 18px; padding: 0; }
+  .bubble li { margin: 2px 0; }
   .drawer-scrim {
     display: none; position: fixed; inset: 0; z-index: 55;
     background: rgba(0,0,0,.35);
@@ -368,7 +392,8 @@
   <div class="drawer-head">
     <span>Ask the AI <span class="dimmer" style="text-transform:none;letter-spacing:0">read-only</span></span>
     <span style="display:flex;gap:6px;align-items:center">
-      <button id="btnChatClear" style="font-size:11px;padding:3px 8px">Clear</button>
+      <button id="btnChatNew" style="font-size:11px;padding:3px 8px"
+              title="Archive this conversation and start a fresh one">New chat</button>
       <button class="modal-x" id="btnChatClose" title="Close">×</button>
     </span>
   </div>
@@ -558,6 +583,28 @@ function fmtAge(h) {
   return (h / 24).toFixed(1) + "d ago";
 }
 
+// Escape first, then apply a tiny markdown subset to the ESCAPED text — so we
+// only ever insert tags we control. Bold, inline code and "-" bullets.
+function md(raw) {
+  let t = esc(raw);
+  t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  const lines = t.split(/\n/);
+  let out = "", inList = false;
+  for (const line of lines) {
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    if (bullet) {
+      if (!inList) { out += "<ul>"; inList = true; }
+      out += `<li>${bullet[1]}</li>`;
+    } else {
+      if (inList) { out += "</ul>"; inList = false; }
+      out += (out && !out.endsWith("<ul>") ? "<br>" : "") + line;
+    }
+  }
+  if (inList) out += "</ul>";
+  return out;
+}
+
 function renderChat(messages) {
   const box = $("chatLog");
   if (!messages || !messages.length) {
@@ -567,13 +614,14 @@ function renderChat(messages) {
   box.innerHTML = messages.map(m => {
     const mine = m.role === "user";
     const who = mine ? "you" : "magicwand";
-    const colour = mine ? "var(--accent)" : "var(--purple)";
-    const text = esc(m.text || "").replace(/\n/g, "<br>");
-    return `<div style="padding:6px 0;border-bottom:1px solid #171b24">
-      <span style="color:${colour};font-weight:600">${who}</span>
-      <span class="dimmer">${m.ts ? new Date(m.ts).toLocaleTimeString() : ""}</span>
-      <div style="margin-top:3px">${text}</div></div>`;
+    const when = m.ts ? new Date(m.ts).toLocaleTimeString() : "";
+    return `<div class="bubble-row ${mine ? "mine" : "theirs"}">
+      <div class="bubble ${mine ? "mine" : "theirs"}">
+        <span class="who">${who} · ${when}</span>${md(m.text || "")}
+      </div></div>`;
   }).join("");
+  box.scrollTop = box.scrollHeight;
+  return;
   box.scrollTop = box.scrollHeight;
 }
 
@@ -624,10 +672,13 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("btnChatSend").onclick = sendChat;
-$("btnChatClear").onclick = async () => {
-  if (!confirm("Clear the chat history?")) return;
-  await post("/api/chat", {action: "clear"});
+$("btnChatNew").onclick = async () => {
+  const r = await post("/api/chat", {action: "new"});
+  if (!r.ok) { toast("could not start a new chat: " + (r.error || "")); return; }
   renderChat([]);
+  $("chatMeta").textContent = r.archived
+    ? `new conversation · ${r.archived} earlier message(s) archived locally`
+    : "new conversation";
 };
 $("chatInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChat(); }

@@ -180,6 +180,23 @@ class TestConsoleStructure(unittest.TestCase):
         dupes = [k for k, v in collections.Counter(ids).items() if v > 1]
         self.assertEqual(dupes, [], f"duplicate ids: {dupes}")
 
+    def test_bubbles_align_by_speaker(self):
+        html = self._html()
+        self.assertIn('class="bubble-row ${mine ? "mine" : "theirs"}"', html)
+        self.assertIn(".bubble.mine", html)
+        self.assertIn(".bubble.theirs", html)
+        self.assertIn("justify-content: flex-end", html)
+
+    def test_new_chat_button_exists(self):
+        self.assertIn('id="btnChatNew"', self._html())
+
+    def test_markdown_is_escaped_before_tagging(self):
+        """Rendering must escape first, then add only our own tags."""
+        html = self._html()
+        idx_esc = html.index("let t = esc(raw);")
+        idx_bold = html.index(r"\*\*([^*]+)\*\*")
+        self.assertLess(idx_esc, idx_bold)
+
     def test_escape_and_shortcut_are_wired(self):
         html = self._html()
         self.assertIn('"Escape"', html)
@@ -190,3 +207,38 @@ class TestConsoleStructure(unittest.TestCase):
         html = self._html()
         self.assertIn("max-height: min(92vh", html)
         self.assertIn("overflow-y: auto", html)
+
+
+class TestNewConversation(unittest.TestCase):
+    """A new chat must ARCHIVE, not destroy: the conversation is evidence."""
+
+    def test_new_archives_and_empties(self):
+        with tempfile.TemporaryDirectory() as d:
+            chat.save_history(d, [
+                {"role": "user", "text": "why veto?", "ts": "t1"},
+                {"role": "assistant", "text": "because news", "ts": "t2"}])
+            out = chat.start_new(d)
+            self.assertTrue(out["ok"])
+            self.assertEqual(out["archived"], 2)
+            self.assertEqual(chat.load_history(d), [])
+            self.assertEqual(chat.archived_count(d), 2)
+
+    def test_archive_is_append_only_across_sessions(self):
+        with tempfile.TemporaryDirectory() as d:
+            for i in range(3):
+                chat.save_history(d, [{"role": "user", "text": f"q{i}"}])
+                chat.start_new(d)
+            self.assertEqual(chat.archived_count(d), 3)
+
+    def test_new_on_empty_history_is_harmless(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = chat.start_new(d)
+            self.assertTrue(out["ok"])
+            self.assertEqual(out["archived"], 0)
+
+    def test_archive_survives_a_clear(self):
+        with tempfile.TemporaryDirectory() as d:
+            chat.save_history(d, [{"role": "user", "text": "keep me"}])
+            chat.start_new(d)
+            chat.clear_history(d)
+            self.assertEqual(chat.archived_count(d), 1)

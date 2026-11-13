@@ -163,6 +163,47 @@ def clear_history(root: str | Path) -> None:
     save_history(root, [])
 
 
+def archive_path(root: str | Path) -> Path:
+    return Path(root) / "data" / "chat-archive.jsonl"
+
+
+def start_new(root: str | Path) -> dict:
+    """Start a fresh conversation, keeping the old one.
+
+    "Clear" destroying history was the wrong default for a project whose whole
+    point is an audit trail: a conversation where you asked "why did it veto?"
+    and got an answer is evidence about what you were told. So a new chat
+    appends the old one to data/chat-archive.jsonl and empties the live log.
+    """
+    root = Path(root)
+    old = load_history(root)
+    archived = 0
+    if old:
+        try:
+            p = archive_path(root)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("a") as f:
+                for m in old:
+                    f.write(json.dumps({"conversation_end": iso(utcnow()),
+                                        **m}, sort_keys=True) + "\n")
+            archived = len(old)
+        except OSError:
+            return {"ok": False, "error": "could not archive the conversation"}
+    save_history(root, [])
+    return {"ok": True, "archived": archived}
+
+
+def archived_count(root: str | Path) -> int:
+    p = archive_path(root)
+    if not p.exists():
+        return 0
+    try:
+        with p.open() as f:
+            return sum(1 for line in f if line.strip())
+    except OSError:
+        return 0
+
+
 # --------------------------------------------------------------------------
 # The client (one per process, with its own budget)
 # --------------------------------------------------------------------------

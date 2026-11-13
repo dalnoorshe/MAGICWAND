@@ -628,7 +628,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif path == "/api/chat":
-            self._json({"messages": chat_mod.load_history(self.root)[-40:]})
+            self._json({"messages": chat_mod.load_history(self.root)[-40:],
+                        "archived": chat_mod.archived_count(self.root)})
         elif path == "/api/backup":
             self._json(get_backups(self.root, self.cfg).status())
         elif path == "/api/storage":
@@ -668,7 +669,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "reflection": ref.to_dict()})
             elif path == "/api/chat":
                 b = self._body()
-                if str(b.get("action", "send")) == "clear":
+                action = str(b.get("action", "send"))
+                if action == "new":
+                    out = chat_mod.start_new(self.root)
+                    out["messages"] = []
+                    self._json(out)
+                    return
+                if action == "clear":
                     chat_mod.clear_history(self.root)
                     self._json({"ok": True, "messages": []})
                     return

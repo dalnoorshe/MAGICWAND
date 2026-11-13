@@ -425,9 +425,16 @@ reader's verdict and thesis, reflection, ledger health, backups) and answer:
 > *"How do I add a market?"* → the exact control or command, for you to use.
 
 It grounds every claim in the state block, and when something is not in the
-state it says so rather than inventing it. A message costs about **$0.0006**,
-history is local (`data/chat.json`, last 60 messages), and there is a Clear
-button.
+state it says so rather than inventing it. A message costs about **$0.0006**.
+Your messages sit on the right, its answers on the left, with light formatting
+(bold, inline code, bullets) applied *after* escaping — so nothing the model
+writes can inject markup.
+
+**"New chat" archives instead of deleting.** History is local
+(`data/chat.json`, last 60 messages); starting a new conversation appends the
+old one to `data/chat-archive.jsonl`. A conversation where you asked "why did it
+veto?" and got an answer is evidence of what you were told — destroying it by
+default was the wrong instinct for a project built on an audit trail.
 
 Its rule, and the reason it stays a chat box: **the model judges what it is
 shown; the operator changes what the system does.** An assistant that acts on

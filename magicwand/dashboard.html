@@ -168,6 +168,7 @@
       <div style="flex:1;min-width:320px">
         <img id="chartImg" alt="rendered chart" style="width:100%;border-radius:6px;border:1px solid #242a36;display:none">
         <div id="chartNone" class="empty">no chart rendered yet — the vision reader draws one on each tick</div>
+      <div class="dimmer" id="chartBars" style="margin-top:6px"></div>
       </div>
       <div id="chartVerdict" style="flex:1;min-width:280px"></div>
     </div>
@@ -550,9 +551,19 @@ function renderChart(s) {
   } else {
     none.style.display = "none";
     img.style.display = "block";
-    // cache-bust so a new render replaces the old image
-    img.src = "/api/chart?v=" + encodeURIComponent(chart.file || Date.now());
-    meta.textContent = `${chart.kb} KB · ${chart.at ? new Date(chart.at).toLocaleTimeString() : ""}`;
+    // Cache-bust on the RENDER time, not the filename. The filename is derived
+    // from the last closed bar, so it only changes once per hour even though the
+    // image is redrawn every tick — keying on it meant the browser sat on one
+    // image for an hour and the chart looked frozen.
+    const stamp = chart.at || chart.file || String(Date.now());
+    img.src = "/api/chart?v=" + encodeURIComponent(stamp);
+    meta.textContent = `${chart.kb} KB · rendered ${chart.at ? new Date(chart.at).toLocaleTimeString() : "—"}`;
+    const bars = (s.research || {}).chart_bars;
+    $("chartBars").textContent = bars
+      ? `redrawn every tick · ${bars.shown} closed ${bars.timeframe} bars · last bar `
+        + `${String(bars.last_bar_utc).replace("T", " ").slice(0, 16)} UTC — `
+        + `a ${bars.timeframe} candle only changes when the ${bars.timeframe} closes`
+      : "";
   }
   if (!cv) {
     v.innerHTML = '<div class="empty">the vision reader has not run yet</div>';

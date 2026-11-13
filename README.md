@@ -392,6 +392,20 @@ If it does not, the most likely cause is a server started before the fix, or
 ./start.sh --bg            run detached (survives closing the terminal)
 ```
 
+### The chart is redrawn every tick — but it is not a live feed
+
+Each tick renders a fresh PNG from the last 120 **closed** bars and saves it to
+`data/charts/`. The console reloads it on every render.
+
+On the 1h timeframe that means the picture changes **once an hour**, when a new
+candle closes — not every five minutes. That is deliberate: the forming bar is
+never traded or drawn, because using a partial bar is lookahead. The panel says
+so explicitly under the image.
+
+If you want visible movement more often, run a shorter timeframe (`5m`, `15m`).
+The strategy's statistics get worse, because costs are paid per trade and there
+are more trades — the chart is not the point.
+
 ### Offline mode is honest about being offline
 
 With no key connected the console runs a **deterministic stand-in model**. It is

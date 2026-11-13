@@ -218,6 +218,13 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
         "cost_usd": report.cost_usd,
         "sources_missing": snapshot.missing(),
         "stub": bool(verdicts) and all(getattr(v, "stub", False) for v in verdicts),
+        # What the image actually contained, so the console can say why an
+        # hourly chart looks unchanged for an hour even though it is redrawn
+        # on every tick.
+        "chart_bars": ({"shown": min(len(bars), 120),
+                        "last_bar_utc": iso(bars[-1].ts),
+                        "timeframe": cfg.market.timeframe}
+                       if bars else None),
         "chart": None if chart_verdict is None else {
             "stance": chart_verdict.stance,
             "confidence": chart_verdict.confidence,

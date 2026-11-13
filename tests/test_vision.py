@@ -131,3 +131,78 @@ class TestOfflineHonesty(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestChartFreshness(unittest.TestCase):
+    """The chart is redrawn every tick; the UI must notice.
+
+    Regression: the cache-buster was the FILENAME, which is derived from the
+    last closed bar — so it changed once an hour while the image changed every
+    tick, and the console appeared frozen.
+    """
+
+    def test_render_time_is_exposed_for_cache_busting(self):
+        from magicwand import dashboard
+        import tempfile as tf
+        from pathlib import Path
+        with tf.TemporaryDirectory() as d:
+            root = Path(d)
+            charts = root / "data" / "charts"
+            charts.mkdir(parents=True)
+            p = charts / "chart_SOL-USD_20261113T1100.png"
+            p.write_bytes(b"x" * 50)
+            meta = dashboard._latest_chart(root / "data")
+            self.assertIsNotNone(meta)
+            self.assertEqual(meta["file"], p.name)
+            self.assertIn("at", meta)
+            self.assertTrue(meta["at"])
+
+    def test_same_filename_rewritten_still_reports_new_time(self):
+        """Within one hour the filename repeats but the render time advances."""
+        import os
+        import time
+        import tempfile as tf
+        from pathlib import Path
+        from magicwand import dashboard
+        with tf.TemporaryDirectory() as d:
+            root = Path(d)
+            charts = root / "data" / "charts"
+            charts.mkdir(parents=True)
+            p = charts / "chart_SOL-USD_20261113T1100.png"
+            p.write_bytes(b"a")
+            first = dashboard._latest_chart(root / "data")["at"]
+            time.sleep(0.01)
+            p.write_bytes(b"b")
+            os.utime(p, None)
+            second = dashboard._latest_chart(root / "data")["at"]
+            self.assertNotEqual(first, second)
+
+
+class TestChartBarMetadata(unittest.TestCase):
+    def test_research_records_bar_window(self):
+        from magicwand import data as dm
+        from magicwand import research_loop as rl
+        from magicwand.config import Config
+        from magicwand.llm import DeepSeekClient, fake_canned
+        from magicwand.research import MarketSnapshot, Source
+        from magicwand.common import iso, utcnow
+        with tempfile.TemporaryDirectory() as d:
+            ts = iso(utcnow())
+            snap = MarketSnapshot(ts=ts, symbol="SOL-USD", price=80.0)
+            snap.sources["derivatives"] = Source("derivatives", True, ts,
+                                                {"funding_rate_pct": 0.01})
+            snap.sources["news"] = Source("news", True, ts, {"count": 0, "items": []})
+            snap.sources["social"] = Source("social", True, ts, {"posts_24h": 25})
+            snap.sources["onchain"] = Source("onchain", True, ts, {"mempool_tx": 1})
+            bars = dm.synthetic_bars(200, seed=3)
+            cfg = Config()
+            cfg.market.exchange = "synthetic"
+            rl.run_cycle(cfg, DeepSeekClient(fake=fake_canned), price=80.0,
+                         atr=1.5, symbol="SOL-USD", snapshot=snap, root=d,
+                         vision=True, bars=bars)
+            led = rl.Ledger(Path(d) / cfg.ledger.path)
+            research = [e for e in led.entries() if e["kind"] == "research"][-1]
+            cb = research["payload"]["chart_bars"]
+            self.assertEqual(cb["shown"], 120)
+            self.assertEqual(cb["timeframe"], "1h")
+            self.assertTrue(cb["last_bar_utc"])

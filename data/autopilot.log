@@ -186,3 +186,7 @@
 [autopilot 11:20:09] tick 2: research: 1/4 readers reported; 3 degraded; evidence +0.10 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
 [autopilot 11:36:06] tick 3: research: 2/4 readers reported; 2 degraded; evidence -0.28; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
 [autopilot 11:52:07] tick 4: research: 3/5 readers reported; 2 degraded; evidence -0.26; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
+[autopilot 12:08:03] tick 5: research: 3/4 readers reported; 1 degraded; evidence -0.42; VETO by news, onchain | proposal rejected before validation: proposal contained no JSON object | des
+[autopilot 12:20:29] autopilot started
+[autopilot 12:21:03] tick 1: research: 5/5 readers reported; evidence -0.40; VETO by derivatives, news, onchain | idea 'sol_neg_funding_short_squeeze_break' refused: near-duplicate of sol_f
+[autopilot 12:36:35] tick 2: research: 5/5 readers reported; evidence -0.42; VETO by derivatives, news, onchain | idea 'sol_capitulation_reversion' refused: near-duplicate of offline_mean_r

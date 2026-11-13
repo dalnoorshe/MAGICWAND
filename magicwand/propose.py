@@ -86,6 +86,14 @@ def normalised_distance(spec: "StrategySpec", prior: dict) -> float:
     return _distance(a, b)
 
 
+def _catalog_ranges() -> str:
+    lines = []
+    for fam, spec in CATALOG.items():
+        r = ", ".join(f"{k} {lo}..{hi}" for k, (lo, hi, _t) in spec["params"].items())
+        lines.append(f"  {fam}: {r}")
+    return "\n".join(lines)
+
+
 def check_novelty(spec: "StrategySpec", prior: list[dict]) -> tuple[bool, str]:
     """Refuse duplicates and near-duplicates. Returns (ok, reason)."""
     fp = spec.fingerprint()
@@ -172,6 +180,11 @@ Rules:
   (forced sellers, funding squeeze, volatility clustering, range breakout).
 - Emit the JSON on one line. Never put a literal newline inside a string.
   Keep `hypothesis` under 40 words.
+- EXPLORE. Your parameters must differ from EVERY attempt listed at the end of
+  this prompt by at least 15% of that parameter's range on at least one
+  parameter. Repeating or micro-tuning a previous attempt is refused and wastes
+  a turn. If you cannot find an untried combination in one family, switch
+  family or change the mechanism you are betting on.
 - Do not propose something you expect to work only because it is complex.
   Every strategy you propose will be tested against realistic and doubled
   fees and against buy-and-hold, and rejected if it does not survive."""
@@ -243,16 +256,21 @@ def propose(client: DeepSeekClient, symbol: str = "SOL-USD",
         "Be genuine: pick the family whose mechanism you actually believe fits "
         "this market, and justify it in `hypothesis`.")
     if prior:
+        rng = _catalog_ranges()
         tried = "\n".join(
             f"  - {p.get('name')} ({p.get('family')}) {p.get('params')}"
             for p in prior[-12:])
-        user += ("\n\nAlready tried (do NOT repeat these or near-neighbours; a "
-                 "near-duplicate is refused):\n" + tried)
+        user += ("\n\nAlready tried (do NOT repeat these, and do not micro-tune "
+                 "them — a near-duplicate within 10% of a parameter's range is "
+                 "refused):\n" + tried)
+        user += "\n\nParameter ranges, so you can jump somewhere new:\n" + rng
     if proposer_fake is not None and client.fake is not None:
         raw = proposer_fake(_PROPOSAL_SYSTEM, user)
     else:
+        # 0.6 produced the same idea over and over (87 identical refusals in the
+        # first day). Exploration needs heat.
         raw = client.chat(system=_PROPOSAL_SYSTEM, user=user,
-                          temperature=0.6, max_tokens=3000, json_mode=True)
+                          temperature=0.95, max_tokens=3000, json_mode=True)
     spec = parse_proposal(raw, symbol=symbol)
     if spec.family in bl:
         # The model proposed something the system has already judged unprofitable.

@@ -242,3 +242,78 @@ class TestNewConversation(unittest.TestCase):
             chat.start_new(d)
             chat.clear_history(d)
             self.assertEqual(chat.archived_count(d), 1)
+
+
+class TestProposalDiagnostics(unittest.TestCase):
+    """'Nothing passed the gate' is unhelpful alone; the funnel explains why.
+
+    First real data: 141 pitched, 7 reached the gate, 87 identical reruns. That
+    is a proposer problem, not a strategy problem — and it was invisible.
+    """
+
+    def _ledger_with(self, d, outcomes):
+        from magicwand.ledger import Ledger
+        led = Ledger(Path(d) / "l.jsonl")
+        for kind in outcomes:
+            if kind == "passed":
+                led.append("proposal", {"ok": True, "spec": {"name": "s", "family": "breakout"}})
+            elif kind == "identical":
+                led.append("proposal", {"ok": False, "summary": "refused: identical to a previous attempt (x)"})
+            elif kind == "near":
+                led.append("proposal", {"ok": False, "summary": "refused: near-duplicate of x"})
+            elif kind == "gate":
+                led.append("proposal", {"ok": False,
+                                        "summary": "REJECTED: not profitable",
+                                        "gates": {"profitable": {"ok": False},
+                                                  "costs_2x": {"ok": False}}})
+            else:
+                led.append("proposal", {"ok": False, "summary": "proposal contained no JSON object"})
+        return led
+
+    def test_counts_each_outcome(self):
+        from magicwand.dashboard import _proposal_stats
+        with tempfile.TemporaryDirectory() as d:
+            led = self._ledger_with(d, ["passed", "identical", "identical", "near",
+                                        "gate", "malformed"])
+            st = _proposal_stats(led)
+            self.assertEqual(st["total"], 6)
+            self.assertEqual(st["counts"]["passed"], 1)
+            self.assertEqual(st["counts"]["identical"], 2)
+            self.assertEqual(st["counts"]["near-duplicate"], 1)
+            self.assertEqual(st["counts"]["failed gate"], 1)
+            self.assertEqual(st["validated"], 1)
+
+    def test_failing_gates_are_ranked(self):
+        from magicwand.dashboard import _proposal_stats
+        with tempfile.TemporaryDirectory() as d:
+            led = self._ledger_with(d, ["gate", "gate"])
+            st = _proposal_stats(led)
+            self.assertEqual(st["failing_gates"]["profitable"], 2)
+
+    def test_empty_ledger_is_zero_not_error(self):
+        from magicwand.dashboard import _proposal_stats
+        with tempfile.TemporaryDirectory() as d:
+            from magicwand.ledger import Ledger
+            st = _proposal_stats(Ledger(Path(d) / "l.jsonl"))
+            self.assertEqual(st["total"], 0)
+            self.assertEqual(st["validated"], 0)
+
+
+class TestExplorationPrompt(unittest.TestCase):
+    """The proposer must be told to explore, and shown the ranges to explore in."""
+
+    def test_prompt_demands_variation(self):
+        from magicwand import propose
+        self.assertIn("EXPLORE", propose._PROPOSAL_SYSTEM)
+        self.assertIn("15%", propose._PROPOSAL_SYSTEM)
+
+    def test_catalog_ranges_are_listed_for_the_model(self):
+        from magicwand.propose import _catalog_ranges
+        text = _catalog_ranges()
+        self.assertIn("sma_trend", text)
+        self.assertIn("slow 5..400", text)
+
+    def test_sampling_temperature_encourages_novelty(self):
+        import inspect
+        from magicwand import propose
+        self.assertIn("temperature=0.95", inspect.getsource(propose))

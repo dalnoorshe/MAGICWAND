@@ -275,6 +275,12 @@
   <section class="card span-6">
     <h2>Gate-approved strategies</h2>
     <div id="strategies" class="dimmer">none</div>
+    <div class="section-label" style="margin-top:12px">Proposal funnel</div>
+    <div id="proposalFunnel" class="dimmer">no proposals yet</div>
+    <div class="dimmer" style="margin-top:6px">
+      "Identical" means the proposer pitched an idea it had already pitched —
+      those never reach the gate, so they tell you nothing about the strategy.
+    </div>
   </section>
 
   <section class="card span-6">
@@ -552,6 +558,30 @@ function renderStrategies(list) {
       <td class="num dim">${pct((s.metrics||{}).train_return)}</td>
       <td>${s.deployed ? '<span class="badge b-good">deployed</span>' : '<span class="badge b-dim">idle</span>'}</td>
     </tr>`).join("")}</table>`;
+}
+
+function renderProposals(p) {
+  const box = $("proposalFunnel");
+  if (!p || !p.total) { box.innerHTML = '<div class="empty">no proposals yet</div>'; return; }
+  const c = p.counts || {};
+  const rows = [
+    ["pitched", p.total],
+    ["reached the gate", p.validated],
+    ["passed", c["passed"] || 0],
+    ["identical rerun", c["identical"] || 0],
+    ["near-duplicate", c["near-duplicate"] || 0],
+    ["malformed", c["no valid proposal"] || 0],
+  ];
+  box.innerHTML = `<table>${rows.map(([k, v]) =>
+      `<tr><td class="dim">${esc(k)}</td><td class="num ${k === "passed" && v ? "good" : ""}">${v}</td></tr>`).join("")}</table>`
+    + ((p.failing_gates && Object.keys(p.failing_gates).length)
+      ? `<div class="dim" style="margin-top:6px">gate failures: ${
+          Object.entries(p.failing_gates).map(([g, n]) => `${esc(g)} ×${n}`).join(", ")}</div>`
+      : "")
+    + ((p.recent || []).length
+      ? `<div class="dimmer" style="margin-top:6px">last: ${
+          esc((p.recent[p.recent.length - 1] || {}).summary || "")}</div>`
+      : "");
 }
 
 function renderFeed(recent) {
@@ -1015,6 +1045,7 @@ async function refresh() {
     renderChart(s);
     renderStorage();
     renderBackups();
+    renderProposals(s.proposals);
     if ($("chatDrawer").classList.contains("open")) loadChat();
   } catch (e) {
     toast("dashboard error: " + e.message);

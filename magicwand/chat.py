@@ -115,6 +115,14 @@ def build_context(state: dict) -> str:
         add(f"reflection_changes: {refl.get('changes')}")
     add(f"demoted_families: {memo.get('blacklisted_families')}")
     add(f"gate_approved_strategies: {len(state.get('strategies') or [])}")
+    props = state.get("proposals") or {}
+    if props:
+        add(f"proposals_total: {props.get('total')} outcomes={props.get('counts')}")
+        add(f"  proposals_actually_validated: {props.get('validated')} "
+            f"failing_gates={props.get('failing_gates')}")
+        for pr in (props.get("recent") or [])[-3:]:
+            add(f"  last_proposal: {pr.get('name')} ({pr.get('family')}) "
+                f"ok={pr.get('ok')} :: {pr.get('summary')}")
     add(f"ledger: {ledger.get('message')} entries={ledger.get('entries')}")
     add(f"autopilot: running={autopilot.get('running')} ticks={autopilot.get('ticks')} "
         f"interval={autopilot.get('interval')}s last={autopilot.get('last_result')}")

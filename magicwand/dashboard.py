@@ -132,6 +132,7 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
     )
 
     autopilot_raw = _read_json(data / "autopilot.json", {})
+    proposals = _proposal_stats(ledger)
     last_research = None
     last_proposal = None
     for e in ledger.entries():
@@ -168,6 +169,7 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
         "research": last_research,
         "chart": _latest_chart(data),
         "proposal": last_proposal,
+        "proposals": proposals,
         "reflection": mem.get("last_reflection"),
         "memory": {
             "blacklisted_families": mem.get("blacklisted_families", []),
@@ -196,6 +198,50 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
                     if (root / "data").exists() else {}),
         "model_mode": ("live" if resolve_mode(root, force_offline) == "live"
                        else "offline"),
+    }
+
+
+def _proposal_stats(ledger: Ledger, keep: int = 5) -> dict:
+    """Why strategies are not getting through.
+
+    'No strategy has passed the gate' is true but unhelpful on its own: the
+    interesting question is whether the gate rejected them, or whether they
+    never reached it because the proposer kept repeating itself.
+    """
+    import collections
+    counts = collections.Counter()
+    validated = 0
+    failing: collections.Counter = collections.Counter()
+    recent: list[dict] = []
+    for e in ledger.entries():
+        if e.get("kind") != "proposal":
+            continue
+        p = e.get("payload", {}) or {}
+        summary = str(p.get("summary") or "")
+        spec = p.get("spec") or {}
+        if p.get("ok"):
+            counts["passed"] += 1
+        elif summary.startswith("refused: identical"):
+            counts["identical"] += 1
+        elif summary.startswith("refused: near-duplicate"):
+            counts["near-duplicate"] += 1
+        elif summary.startswith("REJECTED"):
+            counts["failed gate"] += 1
+            validated += 1
+            for name, v in (p.get("gates") or {}).items():
+                if not v.get("ok"):
+                    failing[name] += 1
+        else:
+            counts["no valid proposal"] += 1
+        recent.append({"name": spec.get("name"), "family": spec.get("family"),
+                       "ok": bool(p.get("ok")), "summary": summary[:160],
+                       "metrics": p.get("metrics") or {}})
+    return {
+        "counts": dict(counts),
+        "validated": validated,
+        "failing_gates": dict(failing.most_common(5)),
+        "recent": recent[-keep:],
+        "total": sum(counts.values()),
     }
 
 

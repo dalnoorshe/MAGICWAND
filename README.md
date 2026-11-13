@@ -442,6 +442,30 @@ its own advice turns every conversational mistake into a live change, and you
 could no longer tell whether a setting moved because you decided it or because a
 model suggested it in passing.
 
+### Why nothing has passed the gate
+
+"No strategy has passed" is true but unhelpful. The console's **Proposal funnel**
+shows what actually happened, and the first real data was a surprise:
+
+| | count |
+|---|---|
+| pitched | 141 |
+| reached the gate | **7** |
+| passed | 0 |
+| identical rerun | **87** |
+| near-duplicate | 13 |
+| malformed | 34 |
+
+Only seven ideas ever got tested. The bottleneck was the proposer repeating
+itself, not the gate being too strict — and that was invisible until the funnel
+existed. Two fixes followed: the proposer is now shown the parameter ranges and
+told to differ by ≥15% of a range on at least one parameter, and sampling
+temperature went 0.6 → 0.95.
+
+Deferred items live in [`docs/PLAN.md`](docs/PLAN.md), each with the trigger that
+would make building it correct — including "show the best candidate's numbers
+once one passes", which is pointless while the leaderboard is empty.
+
 ### Who is allowed to change what
 
 Three different kinds of "the AI changes the dashboard", deliberately separated:

@@ -406,6 +406,31 @@ If you want visible movement more often, run a shorter timeframe (`5m`, `15m`).
 The strategy's statistics get worse, because costs are paid per trade and there
 are more trades — the chart is not the point.
 
+### Ask the AI — the chat box
+
+The console has a chat panel. It is **read-only by construction**: the module
+does not import the desk, the broker, the ledger, the policy store or the runner,
+and it sends no `tools` field — so it cannot trade, change a setting, raise the
+tier or write history, no matter what it says.
+
+What it can do is read the current state (mode, tier, market, desk, every
+reader's verdict and thesis, reflection, ledger health, backups) and answer:
+
+> *"Why did it veto?"* → names the readers, their evidence, and the threshold.
+> *"Why is nothing trading?"* → the tier ceiling, the gate's zero approvals.
+> *"How do I add a market?"* → the exact control or command, for you to use.
+
+It grounds every claim in the state block, and when something is not in the
+state it says so rather than inventing it. A message costs about **$0.0006**,
+history is local (`data/chat.json`, last 60 messages), and there is a Clear
+button.
+
+Its rule, and the reason it stays a chat box: **the model judges what it is
+shown; the operator changes what the system does.** An assistant that acts on
+its own advice turns every conversational mistake into a live change, and you
+could no longer tell whether a setting moved because you decided it or because a
+model suggested it in passing.
+
 ### Who is allowed to change what
 
 Three different kinds of "the AI changes the dashboard", deliberately separated:

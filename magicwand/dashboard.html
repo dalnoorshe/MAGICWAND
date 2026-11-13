@@ -163,6 +163,21 @@
   </section>
 
   <section class="card span-12">
+    <h2>Ask the AI <span class="dimmer">read-only · it can explain, not change</span>
+      <span><button id="btnChatClear" style="font-size:11px;padding:3px 8px">Clear</button></span></h2>
+    <div id="chatLog" class="feed" style="max-height:260px;min-height:60px"></div>
+    <div style="display:flex; gap:6px; margin-top:10px">
+      <textarea id="chatInput" rows="2" placeholder="Why did it veto? What is my tier? How do I add a market?"
+        style="flex:1; resize:vertical; background:#0d0f14; color:#e6e9ef;
+               border:1px solid #242a36; border-radius:6px; padding:8px 10px; font:inherit"></textarea>
+      <button class="primary" id="btnChatSend" style="align-self:stretch">Send</button>
+    </div>
+    <div class="dimmer" id="chatMeta" style="margin-top:6px">
+      It reads the current state and answers. It cannot trade, change settings, or raise the tier.
+    </div>
+  </section>
+
+  <section class="card span-12">
     <h2>Chart the agents see <span class="dimmer" id="chartMeta"></span></h2>
     <div style="display:flex;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:320px">
@@ -506,6 +521,58 @@ function fmtAge(h) {
   return (h / 24).toFixed(1) + "d ago";
 }
 
+function renderChat(messages) {
+  const box = $("chatLog");
+  if (!messages || !messages.length) {
+    box.innerHTML = '<div class="empty">no messages yet — ask it anything about what you see</div>';
+    return;
+  }
+  box.innerHTML = messages.map(m => {
+    const mine = m.role === "user";
+    const who = mine ? "you" : "magicwand";
+    const colour = mine ? "var(--accent)" : "var(--purple)";
+    const text = esc(m.text || "").replace(/\n/g, "<br>");
+    return `<div style="padding:6px 0;border-bottom:1px solid #171b24">
+      <span style="color:${colour};font-weight:600">${who}</span>
+      <span class="dimmer">${m.ts ? new Date(m.ts).toLocaleTimeString() : ""}</span>
+      <div style="margin-top:3px">${text}</div></div>`;
+  }).join("");
+  box.scrollTop = box.scrollHeight;
+}
+
+async function loadChat() {
+  try {
+    const d = await (await fetch("/api/chat")).json();
+    renderChat(d.messages || []);
+  } catch (e) { /* leave empty */ }
+}
+
+async function sendChat() {
+  const el = $("chatInput");
+  const msg = (el.value || "").trim();
+  if (!msg) return;
+  el.value = "";
+  $("btnChatSend").disabled = true;
+  $("chatMeta").textContent = "thinking…";
+  try {
+    const r = await post("/api/chat", {message: msg});
+    renderChat(r.messages || []);
+    $("chatMeta").textContent = r.ok
+      ? `cost of this conversation: $${Number(r.cost_usd || 0).toFixed(5)} · read-only`
+      : ("failed: " + (r.error || "unknown"));
+  } finally { $("btnChatSend").disabled = false; }
+}
+
+$("btnChatSend").onclick = sendChat;
+$("btnChatClear").onclick = async () => {
+  if (!confirm("Clear the chat history?")) return;
+  await post("/api/chat", {action: "clear"});
+  renderChat([]);
+};
+$("chatInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendChat(); }
+});
+
 async function renderBackups() {
   try {
     const b = await (await fetch("/api/backup")).json();
@@ -837,6 +904,7 @@ async function refresh() {
     renderChart(s);
     renderStorage();
     renderBackups();
+    loadChat();
   } catch (e) {
     toast("dashboard error: " + e.message);
   }

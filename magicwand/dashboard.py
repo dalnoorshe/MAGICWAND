@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
+from . import chat as chat_mod
 from .common import iso, parse_iso, utcnow
 from .config import Config
 from .gatekeeper import TIER_NAMES, Policy, RiskTier
@@ -626,6 +627,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
+        elif path == "/api/chat":
+            self._json({"messages": chat_mod.load_history(self.root)[-40:]})
         elif path == "/api/backup":
             self._json(get_backups(self.root, self.cfg).status())
         elif path == "/api/storage":
@@ -663,6 +666,18 @@ class Handler(BaseHTTPRequestHandler):
                 (self.root / "data" / "memory.json").write_text(
                     json.dumps(mem, indent=2))
                 self._json({"ok": True, "reflection": ref.to_dict()})
+            elif path == "/api/chat":
+                b = self._body()
+                if str(b.get("action", "send")) == "clear":
+                    chat_mod.clear_history(self.root)
+                    self._json({"ok": True, "messages": []})
+                    return
+                state = build_state(self.root, self.cfg,
+                                    force_offline=bool(self.offline))
+                out = chat_mod.reply(self.root, str(b.get("message", "")), state)
+                payload = out.to_dict()
+                payload["messages"] = chat_mod.load_history(self.root)[-40:]
+                self._json(payload, 200 if out.ok else 400)
             elif path == "/api/settings":
                 self._settings_post()
             elif path == "/api/backup":

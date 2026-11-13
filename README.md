@@ -408,7 +408,11 @@ are more trades — the chart is not the point.
 
 ### Ask the AI — the chat box
 
-The console has a chat panel. It is **read-only by construction**: the module
+The console has a **Chat button in the header** that slides out a drawer on the
+right — it is not part of the dashboard grid. Close it with `×`, `Esc`, or by
+clicking the backdrop; toggle it with `Ctrl+/`.
+
+It is **read-only by construction**: the module
 does not import the desk, the broker, the ledger, the policy store or the runner,
 and it sends no `tools` field — so it cannot trade, change a setting, raise the
 tier or write history, no matter what it says.

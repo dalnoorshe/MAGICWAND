@@ -144,3 +144,49 @@ class TestReplyGuards(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestConsoleStructure(unittest.TestCase):
+    """The chat lives in the header as a drawer, not as a card in the grid.
+
+    Structural tests on the page are worth it here: the two previous layout
+    bugs (a modal taller than the screen, a chat card in the middle of the
+    dashboard) were invisible to the Python tests.
+    """
+
+    @staticmethod
+    def _html() -> str:
+        return (Path(__file__).resolve().parents[1]
+                / "magicwand" / "dashboard.html").read_text()
+
+    def test_header_has_a_chat_button(self):
+        self.assertIn('id="btnChat"', self._html())
+
+    def test_chat_is_a_drawer(self):
+        html = self._html()
+        self.assertIn('id="chatDrawer"', html)
+        self.assertIn("class=\"drawer\"", html)
+
+    def test_chat_is_not_inside_the_dashboard_grid(self):
+        html = self._html()
+        main = html.split("<main>")[1].split("</main>")[0]
+        self.assertNotIn("chatLog", main)
+        self.assertNotIn("chatInput", main)
+
+    def test_no_duplicate_element_ids(self):
+        import collections
+        import re
+        ids = re.findall(r'id="([^"]+)"', self._html())
+        dupes = [k for k, v in collections.Counter(ids).items() if v > 1]
+        self.assertEqual(dupes, [], f"duplicate ids: {dupes}")
+
+    def test_escape_and_shortcut_are_wired(self):
+        html = self._html()
+        self.assertIn('"Escape"', html)
+        self.assertIn("toggleChat", html)
+
+    def test_modal_is_height_bounded(self):
+        """The settings modal must never be taller than the viewport again."""
+        html = self._html()
+        self.assertIn("max-height: min(92vh", html)
+        self.assertIn("overflow-y: auto", html)

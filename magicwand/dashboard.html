@@ -126,6 +126,31 @@
     color: #8b94a7; margin: 0 0 8px;
   }
   .section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #242a36; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100vh; width: min(460px, 94vw);
+    background: #0f1218; border-left: 1px solid #242a36; z-index: 60;
+    display: flex; flex-direction: column;
+    transform: translateX(101%); transition: transform .16s ease-out;
+    box-shadow: -12px 0 30px rgba(0,0,0,.45);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 14px; border-bottom: 1px solid #242a36;
+    font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase;
+    color: #8b94a7; flex: 0 0 auto;
+  }
+  .drawer-body { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; }
+  .drawer-foot { flex: 0 0 auto; padding: 10px 14px 14px; border-top: 1px solid #242a36; }
+  .drawer-scrim {
+    display: none; position: fixed; inset: 0; z-index: 55;
+    background: rgba(0,0,0,.35);
+  }
+  .drawer-scrim.open { display: block; }
+  @media (min-width: 1400px) {
+    /* Plenty of room: no scrim, keep the dashboard visible beside it. */
+    .drawer-scrim.open { display: none; }
+  }
   .toast {
     position: fixed; right: 16px; bottom: 16px; max-width: 460px;
     background: #1a2030; border: 1px solid var(--line); border-radius: 6px;
@@ -146,6 +171,7 @@
   <button class="primary" id="btnAuto">Start autopilot</button>
   <button class="primary" id="btnTick">Run one tick</button>
   <button id="btnReflect">Reflect</button>
+  <button id="btnChat">Chat</button>
   <button id="btnSettings">Settings</button>
   <span class="badge b-dim" id="mode">—</span>
 </header>
@@ -160,21 +186,6 @@
   <section class="card span-4">
     <h2>Desk — sandbox</h2>
     <div id="deskbody" class="dimmer">no desk state</div>
-  </section>
-
-  <section class="card span-12">
-    <h2>Ask the AI <span class="dimmer">read-only · it can explain, not change</span>
-      <span><button id="btnChatClear" style="font-size:11px;padding:3px 8px">Clear</button></span></h2>
-    <div id="chatLog" class="feed" style="max-height:260px;min-height:60px"></div>
-    <div style="display:flex; gap:6px; margin-top:10px">
-      <textarea id="chatInput" rows="2" placeholder="Why did it veto? What is my tier? How do I add a market?"
-        style="flex:1; resize:vertical; background:#0d0f14; color:#e6e9ef;
-               border:1px solid #242a36; border-radius:6px; padding:8px 10px; font:inherit"></textarea>
-      <button class="primary" id="btnChatSend" style="align-self:stretch">Send</button>
-    </div>
-    <div class="dimmer" id="chatMeta" style="margin-top:6px">
-      It reads the current state and answers. It cannot trade, change settings, or raise the tier.
-    </div>
   </section>
 
   <section class="card span-12">
@@ -352,6 +363,32 @@
     </div>
   </div>
 </div>
+
+<div id="chatDrawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <span>Ask the AI <span class="dimmer" style="text-transform:none;letter-spacing:0">read-only</span></span>
+    <span style="display:flex;gap:6px;align-items:center">
+      <button id="btnChatClear" style="font-size:11px;padding:3px 8px">Clear</button>
+      <button class="modal-x" id="btnChatClose" title="Close">×</button>
+    </span>
+  </div>
+  <div class="drawer-body">
+    <div id="chatLog" class="feed" style="max-height:none;flex:1"></div>
+  </div>
+  <div class="drawer-foot">
+    <textarea id="chatInput" rows="2" placeholder="Why did it veto? What is my tier? (Ctrl+Enter to send)"
+      style="width:100%; resize:vertical; background:#0d0f14; color:#e6e9ef;
+             border:1px solid #242a36; border-radius:6px; padding:8px 10px; font:inherit"></textarea>
+    <div style="display:flex; gap:6px; align-items:center; margin-top:8px">
+      <span class="dimmer" id="chatMeta" style="flex:1;font-size:11px">
+        It reads the state and answers. It cannot trade or change settings.
+      </span>
+      <button class="primary" id="btnChatSend">Send</button>
+    </div>
+  </div>
+</div>
+
+<div id="chatScrim" class="drawer-scrim"></div>
 
 <div class="toast" id="toast"></div>
 
@@ -562,6 +599,29 @@ async function sendChat() {
       : ("failed: " + (r.error || "unknown"));
   } finally { $("btnChatSend").disabled = false; }
 }
+
+function openChat() {
+  $("chatDrawer").classList.add("open");
+  $("chatDrawer").setAttribute("aria-hidden", "false");
+  $("chatScrim").classList.add("open");
+  loadChat();
+  setTimeout(() => $("chatInput").focus(), 80);
+}
+function closeChat() {
+  $("chatDrawer").classList.remove("open");
+  $("chatDrawer").setAttribute("aria-hidden", "true");
+  $("chatScrim").classList.remove("open");
+}
+function toggleChat() {
+  $("chatDrawer").classList.contains("open") ? closeChat() : openChat();
+}
+$("btnChat").onclick = toggleChat;
+$("btnChatClose").onclick = closeChat;
+$("chatScrim").onclick = closeChat;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("chatDrawer").classList.contains("open")) closeChat();
+  if (e.key === "/" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); toggleChat(); }
+});
 
 $("btnChatSend").onclick = sendChat;
 $("btnChatClear").onclick = async () => {
@@ -904,7 +964,7 @@ async function refresh() {
     renderChart(s);
     renderStorage();
     renderBackups();
-    loadChat();
+    if ($("chatDrawer").classList.contains("open")) loadChat();
   } catch (e) {
     toast("dashboard error: " + e.message);
   }

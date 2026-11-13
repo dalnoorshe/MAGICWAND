@@ -424,6 +424,11 @@ reader's verdict and thesis, reflection, ledger health, backups) and answer:
 > *"Why is nothing trading?"* → the tier ceiling, the gate's zero approvals.
 > *"How do I add a market?"* → the exact control or command, for you to use.
 
+Answers **stream token by token** (`/api/chat/stream`, server-sent events), so
+text appears as it is generated instead of after a pause. If the stream is cut
+off, the partial answer stays on screen with the reason underneath — a truncated
+reply is still information.
+
 It grounds every claim in the state block, and when something is not in the
 state it says so rather than inventing it. A message costs about **$0.0006**.
 Your messages sit on the right, its answers on the left, with light formatting

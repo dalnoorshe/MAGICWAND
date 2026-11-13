@@ -471,6 +471,38 @@ class Handler(BaseHTTPRequestHandler):
         threading.Thread(target=run, name="first-live-cycle", daemon=True).start()
         return True
 
+    def _chat_stream(self, message: str) -> None:
+        """Server-sent events: one JSON object per token-chunk, then done.
+
+        Written with an open connection and `Connection: close`, so no chunked
+        encoding is needed: the body ends when the handler returns. A client
+        that disconnects mid-answer is not an error.
+        """
+        state = build_state(self.root, self.cfg, force_offline=bool(self.offline))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Accel-Buffering", "no")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+
+        def emit(obj: dict) -> None:
+            self.wfile.write(b"data: " + json.dumps(obj).encode() + b"\n\n")
+            self.wfile.flush()
+
+        try:
+            emit({"start": True})
+            for event in chat_mod.reply_stream(self.root, message, state):
+                emit(event)
+        except (BrokenPipeError, ConnectionResetError):
+            return                      # client closed the drawer mid-stream
+        except Exception as e:  # noqa: BLE001 - never leave the client hanging
+            try:
+                emit({"error": f"{type(e).__name__}: {e}"[:300]})
+            except Exception:  # noqa: BLE001
+                pass
+
     def _settings_post(self) -> None:
         """Save or clear the API key. This is the only way a key enters the app
         without an environment variable, and it is a human action."""
@@ -713,6 +745,9 @@ class Handler(BaseHTTPRequestHandler):
                 (self.root / "data" / "memory.json").write_text(
                     json.dumps(mem, indent=2))
                 self._json({"ok": True, "reflection": ref.to_dict()})
+            elif path == "/api/chat/stream":
+                b = self._body()
+                self._chat_stream(str(b.get("message", "")))
             elif path == "/api/chat":
                 b = self._body()
                 action = str(b.get("action", "send"))

@@ -293,6 +293,99 @@ def chat_vision(self: DeepSeekClient, system: str, user: str,
     raise LLMError(f"DeepSeek vision request failed after {retries + 1} attempts: {last}")
 
 
+def chat_stream(self: "DeepSeekClient", system: str, user: str,
+                temperature: float = 0.3, max_tokens: int = 1200,
+                json_mode: bool = False) -> "object":
+    """Yield answer text incrementally as the model produces it.
+
+    Same guards as `chat` (budget, key, thinking mode), but the response is an
+    SSE stream: each chunk carries a delta. Reasoning tokens, when thinking is
+    enabled, are skipped — only `content` is yielded, because that is the answer.
+
+    Cost is recorded from the final usage chunk when the server sends one
+    (`stream_options.include_usage`), and estimated from text length otherwise —
+    an estimate is labelled as such by the caller.
+    """
+    self._check_budget()
+
+    if self.fake is not None:
+        text = self.fake(system, user)
+        for i in range(0, len(text), 20):
+            yield text[i:i + 20]
+        self.usage.calls += 1
+        self.usage.add(0, 0, self.model)
+        return
+
+    key = self._key()
+    body: dict[str, Any] = {
+        "model": self.model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "max_tokens": max_tokens,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+        "thinking": {"type": self.thinking},
+    }
+    if self.thinking != "enabled":
+        body["temperature"] = temperature
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(
+        API_URL, data=json.dumps(body).encode(), method="POST",
+        headers={"Content-Type": "application/json",
+                 "Accept": "text/event-stream",
+                 "Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            for raw in r:
+                line = raw.decode("utf-8", "ignore").strip()
+                if not line or line.startswith(":"):
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+                usage = obj.get("usage")
+                if usage:
+                    self.usage.add(int(usage.get("prompt_tokens", 0)),
+                                   int(usage.get("completion_tokens", 0)),
+                                   self.model)
+                    self.usage.reasoning_tokens += int(
+                        usage.get("completion_tokens_details", {})
+                        .get("reasoning_tokens", 0) or 0)
+                for choice in obj.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    piece = delta.get("content")
+                    if piece:
+                        yield piece
+                    if str(choice.get("finish_reason") or "") == "length":
+                        self.usage.truncations += 1
+                        raise TruncatedResponse(
+                            "answer truncated mid-stream (max_tokens reached)")
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode()[:300]
+        except Exception:  # noqa: BLE001
+            pass
+        self.usage.errors += 1
+        raise LLMError(f"HTTP {e.code} from DeepSeek: {detail}") from e
+    except urllib.error.URLError as e:
+        self.usage.errors += 1
+        raise LLMError(f"network error: {e.reason}") from e
+
+
 def _finish(raw: dict) -> str:
     try:
         return str((raw.get("choices") or [{}])[0].get("finish_reason") or "")
@@ -496,3 +589,6 @@ def fake_canned(system: str, user: str) -> str:
 
 
 DeepSeekClient.chat_vision = chat_vision  # type: ignore[attr-defined]
+
+
+DeepSeekClient.chat_stream = chat_stream  # type: ignore[attr-defined]

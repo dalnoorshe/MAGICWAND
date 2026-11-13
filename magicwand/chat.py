@@ -249,6 +249,88 @@ class ChatReply:
                 "cost_usd": round(self.cost_usd, 6)}
 
 
+def _build_prompt(root: Path, message: str, state: dict) -> str:
+    history = load_history(root)
+    convo = history[-MAX_CONTEXT_MESSAGES:]
+    turns = []
+    for m in convo:
+        role = "assistant" if m.get("role") == "assistant" else "user"
+        turns.append(f"{role}: {m.get('text', '')[:600]}")
+    return (
+        "STATE\n" + build_context(state) + "\n\n"
+        + ("CONVERSATION SO FAR\n" + "\n".join(turns) + "\n\n" if turns else "")
+        + f"USER: {message}\n\nAnswer as the operator assistant. Remember: you "
+          f"cannot act, and you must ground claims in STATE."
+    )
+
+
+def _validate(root: Path, message: str) -> str:
+    message = (message or "").strip()
+    if not message:
+        return "empty message"
+    if len(message) > MAX_MESSAGE_CHARS:
+        return f"message too long (max {MAX_MESSAGE_CHARS})"
+    if not resolve_key(root):
+        return "no API key connected — the chat needs one. Settings -> paste key."
+    return ""
+
+
+def reply_stream(root: str | Path, message: str, state: dict):
+    """Yield the answer incrementally, then persist the exchange.
+
+    Yields dicts: {"delta": "..."} while generating, and finally
+    {"done": true, "cost_usd": ..., "estimated_cost": bool}. Errors arrive as
+    {"error": "..."} and the stream ends.
+    """
+    root = Path(root)
+    problem = _validate(root, message)
+    if problem:
+        yield {"error": problem}
+        return
+
+    client = get_client(root)
+    client.settings_path = str(root / "data" / "settings.json")
+    prompt = _build_prompt(root, message.strip(), state)
+
+    before = client.usage.cost_usd
+    chunks: list[str] = []
+    try:
+        for piece in client.chat_stream(system=SYSTEM, user=prompt,
+                                        temperature=0.3, max_tokens=1200):
+            chunks.append(piece)
+            yield {"delta": piece}
+    except BudgetExceeded as e:
+        yield {"error": f"budget: {e}"}
+        return
+    except LLMError as e:
+        # Partial output is still shown; the error explains why it stopped.
+        if chunks:
+            yield {"error": str(e)[:300]}
+        else:
+            yield {"error": str(e)[:300]}
+        return
+
+    text = "".join(chunks).strip()
+    if not text:
+        yield {"error": "the model returned nothing"}
+        return
+
+    spent = client.usage.cost_usd - before
+    estimated = spent <= 0
+    if estimated:
+        # No usage chunk from the server: approximate so the UI is not blank.
+        spent = (len(prompt) + len(text)) / 4 * 0.30 / 1e6
+
+    now = iso(utcnow())
+    save_history(root, load_history(root) + [
+        {"role": "user", "text": message.strip(), "ts": now},
+        {"role": "assistant", "text": text, "ts": now,
+         "cost_usd": round(spent, 6), "streamed": True},
+    ])
+    yield {"done": True, "cost_usd": round(spent, 6), "estimated_cost": estimated,
+           "messages": load_history(root)[-40:]}
+
+
 def reply(root: str | Path, message: str, state: dict) -> ChatReply:
     root = Path(root)
     message = (message or "").strip()

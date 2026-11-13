@@ -668,14 +668,71 @@ async function sendChat() {
   if (!msg) return;
   el.value = "";
   $("btnChatSend").disabled = true;
-  $("chatMeta").textContent = "thinking…";
+
+  // Optimistic bubbles: your message, then an empty one that fills in.
+  const log = $("chatLog");
+  const now = new Date().toLocaleTimeString();
+  log.insertAdjacentHTML("beforeend", `
+    <div class="bubble-row mine"><div class="bubble mine">
+      <span class="who">you · ${now}</span>${md(msg)}</div></div>
+    <div class="bubble-row theirs"><div class="bubble theirs" id="liveBubble">
+      <span class="who">magicwand · ${new Date().toLocaleTimeString()}</span>
+      <span id="liveText">…</span></div></div>`);
+  log.scrollTop = log.scrollHeight;
+
+  const live = $("liveText");
+  $("chatMeta").textContent = "streaming…";
+  let answer = "";
+
   try {
-    const r = await post("/api/chat", {message: msg});
-    renderChat(r.messages || []);
-    $("chatMeta").textContent = r.ok
-      ? `cost of this conversation: $${Number(r.cost_usd || 0).toFixed(5)} · read-only`
-      : ("failed: " + (r.error || "unknown"));
-  } finally { $("btnChatSend").disabled = false; }
+    const resp = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message: msg}),
+    });
+    if (!resp.ok || !resp.body) {
+      const t = await resp.text();
+      throw new Error(t.slice(0, 200) || ("HTTP " + resp.status));
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const {value, done} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const frames = buf.split("\n\n");
+      buf = frames.pop() || "";
+      for (const frame of frames) {
+        const line = frame.split("\n").find(l => l.startsWith("data: "));
+        if (!line) continue;
+        let ev;
+        try { ev = JSON.parse(line.slice(6)); } catch (e) { continue; }
+        if (ev.delta) {
+          answer += ev.delta;
+          live.innerHTML = md(answer);
+          log.scrollTop = log.scrollHeight;
+        } else if (ev.error) {
+          live.innerHTML = md(answer || "") +
+            `<div class="bad" style="margin-top:6px">${esc(ev.error)}</div>`;
+          $("chatMeta").textContent = "stopped: " + ev.error.slice(0, 120);
+        } else if (ev.done) {
+          $("chatMeta").textContent =
+            `${ev.estimated_cost ? "~" : ""}$${Number(ev.cost_usd || 0).toFixed(5)}`
+            + " · read-only · streamed";
+        }
+      }
+    }
+    if (!answer) live.textContent = "(no answer)";
+    log.scrollTop = log.scrollHeight;
+  } catch (e) {
+    live.innerHTML = `<span class="bad">failed: ${esc(e.message)}</span>`;
+    $("chatMeta").textContent = "stream failed";
+  } finally {
+    $("btnChatSend").disabled = false;
+    const b = $("liveBubble"); if (b) b.removeAttribute("id");
+    const t = $("liveText"); if (t) t.removeAttribute("id");
+  }
 }
 
 function openChat() {

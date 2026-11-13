@@ -129,7 +129,7 @@ def read_chart(bars: list[Bar], client: DeepSeekClient, title: str,
         + "\nReturn only the JSON object described in the schema.")
     try:
         raw = client.chat_vision(system=_CHART_SYSTEM, user=user, images=[img],
-                                 temperature=0.2, max_tokens=1100)
+                                 temperature=0.2, max_tokens=3000)
     except BudgetExceeded as e:
         return AgentVerdict(agent="charts", error=f"budget: {e}")
     except LLMError as e:

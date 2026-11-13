@@ -252,7 +252,7 @@ def propose(client: DeepSeekClient, symbol: str = "SOL-USD",
         raw = proposer_fake(_PROPOSAL_SYSTEM, user)
     else:
         raw = client.chat(system=_PROPOSAL_SYSTEM, user=user,
-                          temperature=0.6, max_tokens=900, json_mode=True)
+                          temperature=0.6, max_tokens=3000, json_mode=True)
     spec = parse_proposal(raw, symbol=symbol)
     if spec.family in bl:
         # The model proposed something the system has already judged unprofitable.

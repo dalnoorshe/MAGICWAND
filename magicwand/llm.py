@@ -38,6 +38,17 @@ class BudgetExceeded(LLMError):
     pass
 
 
+class TruncatedResponse(LLMError):
+    """The model hit max_tokens before finishing its answer.
+
+    Thinking mode is ON BY DEFAULT at effort `high`, and its chain of thought is
+    returned separately in `reasoning_content` but still consumes the same token
+    budget. With a small budget that means `content` arrives empty (all budget
+    spent on thinking) or cut off mid-string (a truncated JSON object) — which
+    looks like a model failure but is a budget failure.
+    """
+
+
 @dataclass
 class Usage:
     calls: int = 0
@@ -45,6 +56,9 @@ class Usage:
     completion_tokens: int = 0
     cost_usd: float = 0.0
     errors: int = 0
+    truncations: int = 0
+    empty_content: int = 0
+    reasoning_tokens: int = 0
     day: str = ""
 
     def add(self, pt: int, ct: int, model: str) -> float:
@@ -64,6 +78,12 @@ class DeepSeekClient:  # noqa: D101
     max_calls_per_day: int = 400
     max_cost_per_day_usd: float = 2.00
     timeout: float = 90.0
+    # 'disabled' | 'enabled'. Structured extraction (the schema-bound readers and
+    # the proposer) runs with thinking OFF: it is faster, cheaper, deterministic,
+    # and cannot consume the JSON budget with a chain of thought.
+    thinking: str = "disabled"
+    # Ceiling for automatic budget escalation on a truncated/empty answer.
+    max_tokens_ceiling: int = 8192
     # A deterministic offline stand-in, used by tests and by `--offline`.
     fake: Optional[Any] = None
     # Whether verdicts from `fake` are PLACEHOLDERS (the offline stand-in) or a
@@ -147,25 +167,51 @@ class DeepSeekClient:  # noqa: D101
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": temperature,
             "max_tokens": max_tokens,
             "stream": False,
+            # Explicit, because the default is ON at effort 'high'.
+            "thinking": {"type": self.thinking},
         }
+        if self.thinking != "enabled":
+            # temperature is ignored in thinking mode, so only send it when it
+            # can actually have an effect.
+            body["temperature"] = temperature
         if json_mode:
             body["response_format"] = {"type": "json_object"}
 
+        budget = max_tokens
         last: Optional[Exception] = None
         for attempt in range(retries + 1):
             try:
+                body["max_tokens"] = budget
                 raw = _post_json(API_URL, body, key, self.timeout)
-                choices = raw.get("choices") or []
-                if not choices:
-                    raise LLMError(f"empty choices: {str(raw)[:200]}")
-                text = choices[0].get("message", {}).get("content", "") or ""
+                text, truncated, reason_chars = _read_choice(raw)
                 u = raw.get("usage", {}) or {}
                 self.usage.add(int(u.get("prompt_tokens", 0)),
                                int(u.get("completion_tokens", 0)), self.model)
+                self.usage.reasoning_tokens += reason_chars
+
+                if truncated:
+                    self.usage.truncations += 1
+                    raise TruncatedResponse(
+                        f"answer truncated at max_tokens={budget} "
+                        f"(reasoning used ~{reason_chars} chars)")
+                if not text.strip():
+                    # All budget went to reasoning, or the model said nothing.
+                    self.usage.empty_content += 1
+                    raise TruncatedResponse(
+                        f"empty content (reasoning ~{reason_chars} chars, "
+                        f"finish={_finish(raw)})")
                 return text
+            except TruncatedResponse as e:
+                last = e
+                self.usage.errors += 1
+                # Escalate the budget and turn thinking off: this is the failure
+                # mode where thinking ate the JSON.
+                body["thinking"] = {"type": "disabled"}
+                budget = min(self.max_tokens_ceiling, max(budget * 2, budget + 1024))
+                if attempt < retries:
+                    continue
             except (LLMError, OSError, TimeoutError) as e:
                 last = e
                 self.usage.errors += 1
@@ -215,10 +261,12 @@ def chat_vision(self: DeepSeekClient, system: str, user: str,
             {"role": "system", "content": system},   # text only: images in
             {"role": "user", "content": content},    # system msgs are a 400
         ],
-        "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,
+        "thinking": {"type": self.thinking},
     }
+    if self.thinking != "enabled":
+        body["temperature"] = temperature
     if json_mode:
         body["response_format"] = {"type": "json_object"}
 
@@ -226,13 +274,16 @@ def chat_vision(self: DeepSeekClient, system: str, user: str,
     for attempt in range(retries + 1):
         try:
             raw = _post_json(API_URL, body, key, self.timeout)
-            choices = raw.get("choices") or []
-            if not choices:
-                raise LLMError(f"empty choices: {str(raw)[:200]}")
-            text = choices[0].get("message", {}).get("content", "") or ""
+            text, truncated, reason_chars = _read_choice(raw)
             u = raw.get("usage", {}) or {}
             pt = int(u.get("prompt_tokens", 0))
             self.usage.add(pt, int(u.get("completion_tokens", 0)), self.model)
+            self.usage.reasoning_tokens += reason_chars
+            if truncated or not text.strip():
+                self.usage.truncations += 1
+                raise TruncatedResponse(
+                    f"vision answer truncated/empty (finish={_finish(raw)}, "
+                    f"reasoning ~{reason_chars} chars, max_tokens={max_tokens})")
             return text
         except (LLMError, OSError, TimeoutError) as e:
             last = e
@@ -240,6 +291,29 @@ def chat_vision(self: DeepSeekClient, system: str, user: str,
             if attempt < retries:
                 time.sleep(2.0 * (attempt + 1))
     raise LLMError(f"DeepSeek vision request failed after {retries + 1} attempts: {last}")
+
+
+def _finish(raw: dict) -> str:
+    try:
+        return str((raw.get("choices") or [{}])[0].get("finish_reason") or "")
+    except (IndexError, AttributeError):
+        return ""
+
+
+def _read_choice(raw: dict) -> tuple[str, bool, int]:
+    """Return (content, truncated, reasoning_chars).
+
+    `reasoning_content` is billed against the same budget, so its size is the
+    diagnostic that explains an empty or cut-off answer.
+    """
+    choices = raw.get("choices") or []
+    if not choices:
+        raise LLMError(f"empty choices: {str(raw)[:200]}")
+    msg = choices[0].get("message") or {}
+    text = msg.get("content", "") or ""
+    reasoning = msg.get("reasoning_content", "") or ""
+    finish = str(choices[0].get("finish_reason") or "")
+    return text, finish == "length", len(reasoning)
 
 
 def _get_json_auth(url: str, key: str, timeout: float = 20.0) -> dict:

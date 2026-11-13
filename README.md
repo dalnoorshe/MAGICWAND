@@ -702,7 +702,31 @@ reality check, and then fund it from savings, not from hope.
 - [ ] Longer history (the free hourly window is only ~12 days)
 - [ ] Walk-forward / out-of-sample split, so tuning cannot cheat
 - [ ] Portfolio-level risk across several symbols
+- [ ] `Broker` protocol, then paper/demo adapters (Alpaca → OANDA → Binance → MT5)
 - [ ] Live execution — only after a paper strategy survives the reality check, at 1% risk, with a kill switch
+
+## Platforms (planned)
+
+Where this could trade, in the order that is safe rather than the order that is
+exciting. Full reasoning in [`docs/PLATFORMS.md`](docs/PLATFORMS.md).
+
+| Platform | Markets | First step | Constraint |
+|---|---|---|---|
+| **Alpaca** | US stocks/ETFs | paper keys | easiest; fractional shares |
+| **OANDA v20** | forex, metals | practice account | clean REST |
+| **Binance / Bybit** | crypto spot & perps | testnet | funding, leverage |
+| **Coinbase Advanced** | crypto spot | trade-only key | matches our candle feed |
+| **MetaTrader 5** | forex, metals, CFDs | **demo** account | **Windows-only Python API** → needs a bridge |
+| MetaTrader 4 | legacy | — | no official Python API; skip, use MT5 |
+| Interactive Brokers | stocks, options, futures | paper account | needs TWS/Gateway running |
+
+All of them are gated behind the `live` tier, which the gatekeeper currently
+refuses. Two rules hold for every adapter: **paper/demo before real**, and
+**trade-only keys, never withdrawal**.
+
+The honest sequencing note: extracting a `Broker` protocol comes first, and no
+live adapter is worth building until a strategy actually survives the validation
+gate — otherwise it is plumbing attached to nothing.
 
 ## Safety
 

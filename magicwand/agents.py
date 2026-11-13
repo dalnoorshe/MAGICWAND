@@ -263,8 +263,10 @@ def run_agent(name: str, snap: MarketSnapshot, client: DeepSeekClient,
         user += _wrap_untrusted(extra, "operator_note") + "\n"
     user += "\nReturn only the JSON object described in the schema."
     try:
+        # 4096, not 1100: the reader has to emit a schema-shaped object, and a
+        # small budget was producing truncated JSON ("Unterminated string").
         raw = client.chat(system=system, user=user, temperature=0.2,
-                          max_tokens=1100, json_mode=True)
+                          max_tokens=4096, json_mode=True)
     except BudgetExceeded as e:
         return AgentVerdict(agent=name, error=f"budget: {e}")
     except LLMError as e:

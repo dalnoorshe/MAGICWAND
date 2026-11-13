@@ -64,3 +64,122 @@
 [autopilot 14:13:02] tick 11: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
 [autopilot 14:18:13] tick 12: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
 [autopilot 14:23:30] tick 13: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:28:47] autopilot started
+[autopilot 14:28:48] tick 14: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:29:25] autopilot stopped
+[autopilot 14:29:28] autopilot started
+[autopilot 14:30:29] tick 1: research: 2/4 readers reported; 2 degraded; evidence -0.18 | proposal rejected before validation: Unterminated string starting at: line 1 column 63 (char 62) | 
+[autopilot 14:33:59] tick 15: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:39:10] tick 16: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:44:24] tick 17: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:46:29] tick 2: research: 2/5 readers reported; 3 degraded; evidence -0.29; VETO by charts | proposal rejected before validation: proposal contained no JSON object | desk stood
+[autopilot 14:49:35] tick 18: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 14:54:50] tick 19: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:00:05] tick 20: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:02:23] tick 3: research: 3/5 readers reported; 2 degraded; evidence -0.35; VETO by onchain, charts | proposal rejected before validation: proposal contained no JSON object | d
+[autopilot 15:05:17] tick 21: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:10:29] tick 22: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:15:41] tick 23: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:18:19] tick 4: research: 2/5 readers reported; 3 degraded; evidence -0.34; VETO by charts | proposal rejected before validation: proposal contained no JSON object | desk stood
+[autopilot 15:20:52] tick 24: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:26:03] tick 25: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:31:15] tick 26: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:34:21] tick 5: research: 3/5 readers reported; 2 degraded; evidence -0.31; VETO by onchain, charts | proposal rejected before validation: proposal contained no JSON object | d
+[autopilot 15:36:27] tick 27: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:41:40] tick 28: research: 3/4 readers reported; 1 degraded; evidence -1.00; VETO by derivatives, news, onchain | idea 'offline_mean_revert_20' refused: identical to a previous 
+[autopilot 15:46:52] tick 29: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:50:17] tick 6: research: 1/4 readers reported; 3 degraded; evidence -0.05 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 15:52:03] tick 30: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 15:57:17] tick 31: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:02:30] tick 32: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:06:13] tick 7: research: 3/5 readers reported; 2 degraded; evidence -0.34; VETO by onchain, charts | proposal rejected before validation: Unterminated string starting at: line
+[autopilot 16:07:42] tick 33: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:12:54] tick 34: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:18:07] tick 35: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:22:09] tick 8: research: 2/4 readers reported; 2 degraded; evidence -0.25; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
+[autopilot 16:23:19] tick 36: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:28:31] tick 37: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:33:42] tick 38: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:38:01] tick 9: research: 2/4 readers reported; 2 degraded; evidence -0.11 | idea 'sol_capitulation_snapback' refused: near-duplicate of offline_mean_revert_24 (max param diffe
+[autopilot 16:38:58] tick 39: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:44:09] tick 40: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:49:21] tick 41: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:53:52] tick 10: research: 3/4 readers reported; 1 degraded; evidence -0.10; VETO by onchain | proposal rejected before validation: Unterminated string starting at: line 1 colum
+[autopilot 16:54:35] tick 42: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 16:59:48] tick 43: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:05:00] tick 44: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:09:45] tick 11: research: 2/5 readers reported; 3 degraded; evidence -0.39 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 17:10:11] tick 45: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:15:23] tick 46: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:20:35] tick 47: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:25:39] tick 12: research: 2/5 readers reported; 3 degraded; evidence -0.29; VETO by charts | proposal rejected before validation: proposal contained no JSON object | desk stood
+[autopilot 17:30:48] tick 48: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:36:05] tick 49: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:41:34] tick 13: research: 1/5 readers reported; 4 degraded; evidence -0.55; VETO by charts | proposal rejected before validation: proposal contained no JSON object | desk stood
+[autopilot 17:46:18] tick 50: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:51:30] tick 51: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 17:56:45] tick 52: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:01:58] tick 53: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:07:10] tick 54: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:12:31] tick 14: research: 1/4 readers reported; 3 degraded; evidence +0.10 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 18:17:23] tick 55: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:22:34] tick 56: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:28:27] tick 15: research: 1/4 readers reported; 3 degraded; evidence +0.00 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 18:32:48] tick 57: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:38:01] tick 58: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:43:13] tick 59: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:44:15] tick 16: research: 0/4 readers reported; 4 degraded; evidence +0.00 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 18:48:25] tick 60: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:53:37] tick 61: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 18:58:49] tick 62: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:00:04] tick 17: research: 4/5 readers reported; 1 degraded; evidence -0.27; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
+[autopilot 19:04:02] tick 63: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:09:14] tick 64: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:14:27] tick 65: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:16:00] tick 18: research: 1/4 readers reported; 3 degraded; evidence -0.45; VETO by onchain | proposal rejected before validation: Unterminated string starting at: line 1 colum
+[autopilot 19:19:39] tick 66: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:24:51] tick 67: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:30:05] tick 68: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:31:56] tick 19: research: 1/5 readers reported; 4 degraded; evidence -0.55; VETO by charts | proposal rejected before validation: proposal contained no JSON object | desk stood
+[autopilot 19:32:44] autopilot started
+[autopilot 19:33:39] tick 1: research: 2/5 readers reported; 3 degraded; evidence -0.12 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 19:35:17] tick 69: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:38:17] autopilot stopped
+[autopilot 19:38:23] autopilot started
+[autopilot 19:40:27] tick 70: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:45:41] tick 71: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:50:51] tick 72: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 19:54:19] tick 2: research: 3/4 readers reported; 1 degraded; evidence -0.22; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
+[autopilot 19:56:05] tick 73: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:01:16] tick 74: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:06:30] tick 75: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:10:11] tick 3: research: 3/5 readers reported; 2 degraded; evidence -0.33; VETO by charts | proposal rejected before validation: proposal contained no JSON object | desk stood
+[autopilot 20:11:47] tick 76: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:17:17] tick 77: research: 3/4 readers reported; 1 degraded; evidence -1.00; VETO by derivatives, news, social | idea 'offline_mean_revert_24' refused: identical to a previous a
+[autopilot 20:22:34] tick 78: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:26:10] tick 4: research: 2/4 readers reported; 2 degraded; evidence -0.23; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
+[autopilot 20:27:49] tick 79: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:32:59] tick 80: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:38:11] tick 81: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:41:58] tick 5: research: 0/4 readers reported; 4 degraded; evidence +0.00 | proposal rejected before validation: Unterminated string starting at: line 1 column 58 (char 57) | 
+[autopilot 20:43:23] tick 82: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:48:33] tick 83: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:53:44] tick 84: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 20:57:49] tick 6: research: 2/5 readers reported; 3 degraded; evidence -0.16 | proposal rejected before validation: Unterminated string starting at: line 1 column 48 (char 47) | 
+[autopilot 20:58:55] tick 85: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:04:07] tick 86: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:09:19] tick 87: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:13:39] tick 7: research: 2/4 readers reported; 2 degraded; evidence -0.16 | proposal rejected before validation: proposal contained no JSON object | desk stood down: no strate
+[autopilot 21:14:29] tick 88: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:19:39] tick 89: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:24:55] tick 90: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:29:30] tick 8: research: 3/5 readers reported; 2 degraded; evidence -0.32; VETO by derivatives | proposal rejected before validation: proposal contained no JSON object | desk 
+[autopilot 21:30:25] tick 91: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:35:36] tick 92: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:40:47] tick 93: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:45:23] tick 9: research: 3/5 readers reported; 2 degraded; evidence -0.34; VETO by onchain | proposal rejected before validation: proposal contained no JSON object | desk stoo
+[autopilot 21:45:57] tick 94: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:51:08] tick 95: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 21:56:19] tick 96: research: 4/4 readers reported; evidence -1.00; VETO by derivatives, news, social, onchain | idea 'offline_mean_revert_24' refused: identical to a previous atte
+[autopilot 11:03:15] autopilot started
+[autopilot 11:04:13] tick 1: research: 3/5 readers reported; 2 degraded; evidence -0.21; VETO by news | strategy 'sol_funding_discount_squeeze_breakout' rejected: REJECTED: not profitable a

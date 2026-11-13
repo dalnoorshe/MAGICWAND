@@ -132,3 +132,33 @@ class TestExchangeSelection(unittest.TestCase):
         self.assertTrue(dashboard._market_on_exchange("PAXG-USD", "kraken"))
         self.assertTrue(dashboard._market_on_exchange("BTC-USD", "coinbase"))
         self.assertFalse(dashboard._market_on_exchange("NOTREAL-USD", "coinbase"))
+
+
+class TestLauncherFlags(unittest.TestCase):
+    """Starting on another market must be one flag, not a code edit."""
+
+    def _mod(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "mw_launcher3",
+            str(Path(__file__).resolve().parents[1] / "magicwand-launcher.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_symbol_flag_exists(self):
+        import inspect
+        src = inspect.getsource(self._mod())
+        self.assertIn('"--symbol"', src)
+        self.assertIn('"--exchange"', src)
+
+    def test_unknown_symbol_is_rejected_by_the_registry(self):
+        from magicwand import markets
+        self.assertFalse(markets.is_supported("XAU-USD"))
+        self.assertTrue(markets.is_supported("PAXG-USD"))
+
+    def test_market_must_have_a_feed_on_the_requested_venue(self):
+        from magicwand import markets
+        m = markets.get("PAXG-USD")
+        self.assertTrue(m.supports("coinbase"))
+        self.assertTrue(m.supports("kraken"))

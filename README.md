@@ -448,6 +448,14 @@ Derivatives (funding, open interest, positioning) stay on Binance regardless,
 because that is where those public endpoints exist; the snapshot labels which
 source each number came from.
 
+Or pick it at launch, which writes the choice into settings so research, chart
+and strategy all follow:
+
+```bash
+./start.sh --symbol PAXG-USD            # gold proxy, Coinbase feed
+./start.sh --symbol BTC-USD --exchange kraken
+```
+
 Switch markets in **Settings → Market**. It applies on the next tick, no restart, and
 is refused while the desk holds an open position — changing market mid-trade
 would orphan the position. The social reader follows the market automatically

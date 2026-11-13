@@ -108,6 +108,11 @@ def preflight(force_offline: bool = False) -> bool:
     except Exception:  # noqa: BLE001
         print(_warn("backup status unavailable"))
 
+    try:
+        from magicwand import markets as _m
+        print(_ok(f"markets available: {', '.join(_m.symbols())}"))
+    except Exception:  # noqa: BLE001
+        pass
     print(_ok("market data: public feeds, no key needed"))
     print(_warn("broker: none — this build cannot place real orders (paper only)"))
     return ok
@@ -143,6 +148,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="autopilot seconds between ticks (0 = start idle)")
     ap.add_argument("--offline", action="store_true",
                     help="force the offline stub model even if a key is connected")
+    ap.add_argument("--symbol", help="market to trade, e.g. PAXG-USD")
+    ap.add_argument("--exchange", choices=["coinbase", "kraken"],
+                    help="candle venue")
     ap.add_argument("--live", action="store_true",
                     help="require the real model; refuse to fall back to offline")
     ap.add_argument("--bg", action="store_true",
@@ -175,9 +183,31 @@ def main(argv: list[str] | None = None) -> int:
     if port != args.port:
         print(_warn(f"port {args.port} busy, using {port}"))
 
+    from magicwand import markets as markets_mod
     from magicwand.config import Config
     from magicwand.dashboard import serve
     from magicwand.settings_store import SettingsStore, resolve_key
+
+    # --symbol / --exchange are written into settings so the whole system
+    # (research, chart, strategy) follows them, not just this process.
+    st = SettingsStore(ROOT / "data" / "settings.json")
+    cur = st.load()
+    if args.symbol:
+        sym = args.symbol.strip().upper()
+        if not markets_mod.is_supported(sym):
+            print(_bad(f"unknown market {sym!r}"))
+            print(f"    {DIM}available: {', '.join(markets_mod.symbols())}{OFF}")
+            return 2
+        cur.symbol = sym
+    if args.exchange:
+        if not markets_mod.get(cur.symbol).supports(args.exchange):
+            print(_bad(f"{cur.symbol} has no feed on {args.exchange}"))
+            return 2
+        cur.exchange = args.exchange
+    if args.symbol or args.exchange:
+        st.save(cur)
+        print(_ok(f"market set to {cur.symbol}"
+                  f"{' via ' + cur.exchange if cur.exchange else ''}"))
 
     cfg = Config()
     pub = SettingsStore(ROOT / "data" / "settings.json").public_dict()

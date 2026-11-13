@@ -170,6 +170,8 @@ Rules:
 - Only use parameters listed for the chosen family, inside their ranges.
 - State a real hypothesis. "Prices go up" is not one. Prefer a mechanism
   (forced sellers, funding squeeze, volatility clustering, range breakout).
+- Emit the JSON on one line. Never put a literal newline inside a string.
+  Keep `hypothesis` under 40 words.
 - Do not propose something you expect to work only because it is complex.
   Every strategy you propose will be tested against realistic and doubled
   fees and against buy-and-hold, and rejected if it does not survive."""
@@ -195,13 +197,11 @@ def catalog_text() -> str:
 
 def parse_proposal(raw: str, symbol: str = "SOL-USD",
                    proposed_by: str = "agent") -> StrategySpec:
-    text = (raw or "").strip()
-    if not text.startswith("{"):
-        a, b = text.find("{"), text.rfind("}")
-        if a == -1 or b == -1:
-            raise ValueError("proposal contained no JSON object")
-        text = text[a: b + 1]
-    obj = json.loads(text)
+    from .jsonfix import parse_json_lenient
+    parsed = parse_json_lenient(raw)
+    if not parsed.ok:
+        raise ValueError(parsed.note or "proposal contained no JSON object")
+    obj = parsed.obj
     if not isinstance(obj, dict):
         raise ValueError("proposal was not a JSON object")
     family = str(obj.get("family", "")).strip()

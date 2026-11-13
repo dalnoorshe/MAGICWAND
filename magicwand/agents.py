@@ -29,6 +29,7 @@ import math
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
+from .jsonfix import parse_json_lenient
 from .llm import BudgetExceeded, DeepSeekClient, LLMError
 from .research import MarketSnapshot
 
@@ -117,6 +118,12 @@ Hard rules:
 - Do not invent numbers. If a source is missing, say the source is missing and
   lower your confidence. Absence of data is not a signal.
 - You must answer with a single JSON object and nothing else.
+- Emit it on ONE line, or at least never put a literal newline, tab or carriage
+  return inside a string value — escape them as \\n, \\t, \\r. Unescaped control
+  characters make the JSON invalid.
+- Keep `thesis` under 60 words and each claim under 40. Long prose is the main
+  reason answers get cut off.
+- No trailing commas. No comments. No markdown fences.
 
 JSON schema:
 {
@@ -179,25 +186,15 @@ def _clamp(x: float, lo: float, hi: float) -> float:
 def parse_verdict(agent: str, raw: str) -> AgentVerdict:
     """Validate model output. Anything malformed becomes a neutral verdict."""
     v = AgentVerdict(agent=agent)
-    text = (raw or "").strip()
-    if not text:
-        v.error = "empty response"
+    parsed = parse_json_lenient(raw)
+    if not parsed.ok:
+        v.error = parsed.note or "unparseable response"
         return v
-    # Models sometimes wrap JSON in prose or fences. Find the object.
-    if not text.startswith("{"):
-        start, end = text.find("{"), text.rfind("}")
-        if start == -1 or end == -1:
-            v.error = "no JSON object in response"
-            return v
-        text = text[start: end + 1]
-    try:
-        obj = json.loads(text)
-    except json.JSONDecodeError as e:
-        v.error = f"invalid JSON: {e}"
-        return v
+    obj = parsed.obj
     if not isinstance(obj, dict):
         v.error = "response was not a JSON object"
         return v
+    repaired_note = parsed.note if parsed.repaired else ""
 
     stance = str(obj.get("stance", "")).lower().strip()
     if stance not in VALID_STANCES:
@@ -240,6 +237,9 @@ def parse_verdict(agent: str, raw: str) -> AgentVerdict:
         ))
 
     warnings = [str(w)[:300] for w in (obj.get("warnings") or [])[:5]]
+    if repaired_note:
+        # Never silent: a repaired answer is reported so a bad format is visible.
+        warnings = warnings + [f"auto-repaired response: {repaired_note}"]
     v.stance = stance
     v.confidence = _clamp(conf, 0.0, 1.0)
     v.evidence_score = _clamp(score, -1.0, 1.0)

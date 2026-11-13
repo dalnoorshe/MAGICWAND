@@ -64,14 +64,9 @@ def parse_chart_verdict(raw: str) -> AgentVerdict:
     if v.error:
         return v
     # Extra fields that only the vision agent produces.
-    try:
-        text = raw.strip()
-        if not text.startswith("{"):
-            a, b = text.find("{"), text.rfind("}")
-            text = text[a:b + 1] if a != -1 else text
-        obj = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return v
+    from .jsonfix import parse_json_lenient
+    parsed = parse_json_lenient(raw)
+    obj = parsed.obj if parsed.ok else None
     if isinstance(obj, dict):
         v.observations = [str(o)[:200] for o in (obj.get("observations") or [])[:6]]
         v.injected_text_seen = bool(obj.get("injected_text_seen", False))

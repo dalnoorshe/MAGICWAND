@@ -410,6 +410,12 @@ If you ever see an identical verdict repeated by all four readers, that is the
 telltale: a real model gives four different readings. Connect a key and each
 reader gets its own prompt and its own opinion.
 
+A reader showing `DEGRADED` is a failed reader, not an abstention. Two causes
+were found and both are fixed: the token budget was too small once thinking mode
+consumed it (raised, plus retry with escalation), and models sometimes emit a
+literal newline inside a JSON string, which is invalid (repaired, and the repair
+is reported in the verdict's warnings so a bad format stays visible).
+
 ### What keys do I need? One.
 
 ```bash

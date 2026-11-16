@@ -283,15 +283,22 @@ def propose(client: DeepSeekClient, symbol: str = "SOL-USD",
 # The gate
 # --------------------------------------------------------------------------
 
-def validate(spec: StrategySpec, bars, cfg: Config) -> ValidationResult:
-    """Run every gate. Returns pass/fail with the reason for each failure."""
+def validate(spec: StrategySpec, bars, cfg: Config,
+             strategy=None) -> ValidationResult:
+    """Run every gate. Returns pass/fail with the reason for each failure.
+
+    `strategy` lets a composed strategy (magicwand/compose.py) be judged by the
+    same gates as a catalog one — an invented idea earns its place the same way
+    a template does.
+    """
     gates: dict[str, tuple[bool, str]] = {}
     reasons: list[str] = []
     metrics: dict = {}
 
     # 1. catalog + parameters (already enforced by parse/build, re-checked)
     try:
-        strat = build_parameterised(spec.family, spec.params)
+        strat = strategy if strategy is not None else build_parameterised(
+            spec.family, spec.params)
         gates["catalog"] = (True, f"family {spec.family} with valid parameters")
     except ValueError as e:
         gates["catalog"] = (False, str(e))
@@ -311,10 +318,8 @@ def validate(spec: StrategySpec, bars, cfg: Config) -> ValidationResult:
         gates["holdout"] = (False, f"holdout only {len(holdout)} bars")
         return ValidationResult(False, gates, ["holdout window too small"], metrics)
 
-    try:
-        strat = build_parameterised(spec.family, spec.params)
-    except ValueError as e:
-        return ValidationResult(False, gates, [f"build failed: {e}"], metrics)
+    # (strat was already built and validated above; do not rebuild it here, or a
+    # composed strategy would be rejected for not being a catalog family.)
 
     # 3. realistic costs
     base = run_backtest(train, cfg, strat, BacktestOptions(signal_delay=1,

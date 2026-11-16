@@ -26,6 +26,7 @@ from . import research_loop
 from . import runner
 from .config import Config
 from . import audit as audit_mod
+from . import compose as compose_mod
 from . import forecast as forecast_mod
 from . import integrations as integrations_mod
 from . import service as service_mod
@@ -387,6 +388,44 @@ def cmd_storage(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_compose(cfg: Config, args) -> int:
+    """Have the model compose a strategy, then judge it with the same gate."""
+    from .llm import DeepSeekClient, fake_composition, fake_canned
+    symbol = args.symbol or cfg.market.symbol
+    exchange = args.exchange or cfg.market.exchange
+    client = DeepSeekClient(model=args.model,
+                            fake=(fake_composition if args.offline else None))
+    if not client.available():
+        print("No API key. Set DEEPSEEK_API_KEY or use --offline.", file=sys.stderr)
+        return 2
+    bars = data_mod.fetch(exchange, symbol, cfg.market.timeframe,
+                          max(args.candles, 400), seed=cfg.seed)
+
+    try:
+        comp = compose_mod.propose(client, symbol=symbol,
+                                   market_context="",
+                                   proposer_fake=fake_composition if args.offline else None)
+    except compose_mod.CompositionError as e:
+        print(f"  proposed composition refused: {e}")
+        return 1
+
+    print()
+    print(f"  COMPOSED STRATEGY — {symbol} @ {cfg.market.timeframe}")
+    print("  " + "-" * 74)
+    print(f"  expression : {comp.describe()}")
+    print(f"  hypothesis : {comp.hypothesis}")
+    print(f"  risk       : stop {comp.stop_atr:g} ATR · target {comp.target_atr:g} ATR"
+          f" · time stop {comp.max_hold_bars} bars")
+    print(f"  fingerprint: {comp.fingerprint()}")
+    result = compose_mod.validate_composition(comp, bars, cfg)
+    print()
+    print(f"  {result.summary}")
+    for gate, (ok, detail) in result.gates.items():
+        print(f"    {'PASS' if ok else 'FAIL'}  {gate:15s} {detail}")
+    print()
+    return 0 if result.passed else 1
+
+
 def cmd_forecast(cfg: Config, args) -> int:
     """Train a trend model walk-forward and report whether it beats the base rate."""
     symbol = args.symbol or cfg.market.symbol
@@ -536,6 +575,14 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--max-calls", type=int, default=400)
     rs.add_argument("--max-cost", type=float, default=2.0)
     rs.set_defaults(fn=cmd_research)
+
+    cm = sub.add_parser("compose", help="model composes a strategy; the gate judges it")
+    cm.add_argument("--symbol")
+    cm.add_argument("--exchange", choices=["coinbase", "binance", "kraken"])
+    cm.add_argument("--candles", type=int, default=1500)
+    cm.add_argument("--model", default="deepseek-flash")
+    cm.add_argument("--offline", action="store_true")
+    cm.set_defaults(fn=cmd_compose)
 
     fc = sub.add_parser("forecast", help="algorithmic trend forecast, honestly scored")
     fc.add_argument("--symbol")

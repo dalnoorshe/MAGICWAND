@@ -67,6 +67,35 @@ allows.
 
 ---
 
+## 2d. Composition vs secrecy
+
+**Composition is built.** `wand compose` lets the model invent a strategy from
+an audited vocabulary — up to three ANDed conditions over nine features, plus
+ATR stop/target and a time stop — and the result goes through the *same*
+validation gate as any catalog template. An invented idea earns its place with
+evidence, not novelty.
+
+**Secrecy is not.** A strategy that trades is observable in its fills; one that
+runs on a machine you control is readable by whoever has that machine. Obfuscating
+the code buys effort, not safety, and it makes the thing unauditable — which is
+the opposite of this project's value.
+
+What actually protects an edge, in order of how much it helps:
+
+1. **The graded record.** Months of dated, hash-chained claims with outcomes is
+   not copyable by reading code — it is accumulated evidence tied to your ledger.
+2. **Data and feature work.** The edge, if any, lives in inputs and labels, not
+   in a clever expression.
+3. **Operational hygiene.** Local-only state, trade-only keys, no publishing of
+   the strategy spec, disk encryption if the machine leaves your control.
+4. **Speed of iteration.** A record that keeps being re-validated is harder to
+   copy than a static trick.
+
+**Trigger to revisit:** the operator wants to run this for someone else, which
+raises a different question (licensing and disclosure) than keeping it private.
+
+---
+
 ## 2c. Trend forecasting: what the first result says
 
 **Status:** built (`wand forecast`), and it reports **no skill** on real data.

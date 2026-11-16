@@ -557,6 +557,31 @@ def fake_proposal(system: str, user: str) -> str:
     })
 
 
+def fake_composition(system: str, user: str) -> str:
+    """Offline stand-in for the strategy composer.
+
+    Deterministic and in-range, so the whole compose -> gate path can be
+    exercised without a key. It is not clever; the gate decides.
+    """
+    import json as _json
+    tried = user.count("hypothesis")
+    variants = [
+        {"clauses": [{"feature": "rsi", "op": "<", "value": 35},
+                     {"feature": "dist_slow", "op": ">", "value": -0.06}],
+         "stop_atr": 2.0, "target_atr": 4.0, "max_hold_bars": 48,
+         "hypothesis": "oversold but still above the slow mean: dip in an uptrend"},
+        {"clauses": [{"feature": "zscore", "op": ">", "value": 1.5},
+                     {"feature": "atr_ratio", "op": "<", "value": 1.2}],
+         "stop_atr": 1.5, "target_atr": 3.0, "max_hold_bars": 36,
+         "hypothesis": "stretched above the mean while volatility is compressed"},
+        {"clauses": [{"feature": "ret5", "op": "<", "value": -0.03},
+                     {"feature": "vol_z", "op": ">", "value": 1.0}],
+         "stop_atr": 2.5, "target_atr": 5.0, "max_hold_bars": 72,
+         "hypothesis": "capitulation on high volume: forced sellers exhaust"},
+    ]
+    return _json.dumps(variants[tried % len(variants)])
+
+
 def fake_canned(system: str, user: str) -> str:
     low = user.lower()
     bearish, bullish = 0, 0

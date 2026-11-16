@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 385 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 402 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -845,6 +845,35 @@ Two rules that make live trading safe to add later:
 
 Live adapters therefore need only implement `connected` + `fetch_equity()`; the
 desk funding and every size calculation follow automatically.
+
+## Composing strategies, not just picking one
+
+```bash
+python3 wand.py compose --exchange binance --candles 1500
+```
+
+The model does not have to pick one of three templates. It composes a strategy
+from an audited vocabulary — up to three ANDed conditions over nine features
+(RSI, z-score, distance from fast/slow mean, MA slope, ATR ratio, range
+position, volume z, 5-bar return), plus an ATR stop/target and a time stop:
+
+```
+expression : zscore > 1.5 AND atr_ratio < 1.2
+hypothesis : stretched above the mean while volatility is compressed
+risk       : stop 1.5 ATR · target 3 ATR · time stop 36 bars
+→ REJECTED: not profitable at realistic costs (-10.49%); dies at 2x costs ...
+```
+
+Every clause is bounded to a sane range, one clause per feature, at most three —
+and the composition is judged by the **same gate** as a catalog strategy. It is
+invention inside a grammar we can validate, because arbitrary generated code that
+trades money cannot be audited or backtested honestly.
+
+On secrecy: the project does **not** try to make a strategy unreadable, because it
+cannot. A strategy that trades is visible in its fills, and code on your machine
+is readable by anyone with the machine. The durable asset is the **graded record**
+— months of dated claims and outcomes cannot be copied by reading code. See
+`docs/PLAN.md` §2d.
 
 ## Forecasting: algorithmic, and scored
 

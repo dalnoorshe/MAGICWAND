@@ -200,3 +200,27 @@ class TestMemoryFile(unittest.TestCase):
         text = self._memory()
         self.assertIn("approved **0** strategies", text)
         self.assertIn("$50", text)
+
+
+class TestMemoryIsNotMangled(unittest.TestCase):
+    """Bulk edits have twice rewritten the memory file's own anecdote.
+
+    A blanket "N tests" replacement turned "a README claiming 179 tests" into
+    "claiming 383 tests" — destroying the very lesson it records. The number in
+    that sentence is historical and must never be updated.
+    """
+
+    def _memory(self) -> str:
+        return (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text()
+
+    def test_stale_readme_anecdote_keeps_its_original_number(self):
+        self.assertIn("a README claiming 179 tests", self._memory())
+
+    def test_memory_test_count_matches_reality(self):
+        """The current count in the memory must not drift from the suite."""
+        import re
+        text = self._memory()
+        m = re.search(r"(\d+) tests", text)
+        self.assertIsNotNone(m)
+        claimed = int(m.group(1))
+        self.assertGreater(claimed, 300, "count looks stale or mangled")

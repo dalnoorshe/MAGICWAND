@@ -63,7 +63,7 @@ These were each learned by breaking them. Do not "improve" them away.
 - **Never weaken the validation gate** to make a strategy pass.
 - **Never trust a silent `str.replace`.** Twice an edit did nothing because the
   indentation or spacing differed, and the result shipped (a UI that threw on
-  every refresh; a README claiming 370 tests). Verify with a test or a grep
+  every refresh; a README claiming 179 tests). Verify with a test or a grep
   after editing, not by assuming the edit applied.
 - **A UI bug is not cosmetic.** One undefined variable aborted the whole refresh
   loop, so autopilot, audit, storage and the feed all looked dead while the

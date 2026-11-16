@@ -63,7 +63,10 @@ def coinbase_candles(symbol: str = "SOL-USD", timeframe: str = "1h",
     gran = _GRANULARITY.get(timeframe)
     if gran is None:
         raise FeedError(f"unsupported timeframe {timeframe!r}")
-    candles = max(10, min(candles, 300))
+    # Do NOT clamp to 300 here: 300 is the per-request limit, and the loop
+    # below paginates. Clamping made every request for more history silently
+    # return a single page.
+    candles = max(10, int(candles))
 
     last_err: Optional[Exception] = None
     for attempt in range(retries + 1):
@@ -72,11 +75,12 @@ def coinbase_candles(symbol: str = "SOL-USD", timeframe: str = "1h",
             # `end` only. (Combining start+limit+end returns HTTP 400.)
             out: dict[int, Bar] = {}
             end = datetime.now(timezone.utc).replace(microsecond=0)
+            window = min(300, max(1, candles))
             while len(out) < candles:
-                take = min(300, candles - len(out))
+                start = end - timedelta(seconds=gran * window)
                 url = (f"{COINBASE}/products/{symbol}/candles"
-                       f"?granularity={gran}&limit={take}"
-                       f"&end={int(end.timestamp())}")
+                       f"?granularity={gran}"
+                       f"&start={int(start.timestamp())}&end={int(end.timestamp())}")
                 rows = _get_json(url)
                 if not isinstance(rows, list):
                     raise FeedError(f"unexpected candle payload for {symbol}")
@@ -94,7 +98,7 @@ def coinbase_candles(symbol: str = "SOL-USD", timeframe: str = "1h",
                         continue  # skip malformed candles rather than crash money code
                 if len(out) == before:
                     break  # no progress: stop instead of looping forever
-                end = datetime.fromtimestamp(min(out), tz=timezone.utc) - timedelta(seconds=gran)
+                end = start - timedelta(seconds=gran)
             bars = [out[k] for k in sorted(out)]
             if len(bars) < 5:
                 raise FeedError(f"only {len(bars)} candles returned for {symbol}")
@@ -105,6 +109,56 @@ def coinbase_candles(symbol: str = "SOL-USD", timeframe: str = "1h",
             if attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
     raise FeedError(f"Coinbase feed failed after {retries + 1} tries: {last_err}")
+
+
+BINANCE = "https://api.binance.com"
+_BINANCE_INTERVAL = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h",
+                     "4h": "4h", "6h": "6h", "1d": "1d"}
+
+
+def binance_candles(symbol: str, timeframe: str = "1h",
+                    candles: int = 1000) -> list[Bar]:
+    """Spot klines from Binance: 1000 per request, years of history.
+
+    Used for long backtests and for training the trend model, where the ~300
+    bar limit of the Coinbase endpoint is not enough.
+    """
+    interval = _BINANCE_INTERVAL.get(timeframe)
+    if interval is None:
+        raise FeedError(f"unsupported timeframe {timeframe!r} for Binance")
+    pair = symbol.replace("-", "").upper()
+    if not pair.endswith("USDT"):
+        pair = pair.replace("USDT", "") + "USDT"
+    out: dict[int, Bar] = {}
+    end_ms: Optional[int] = None
+    while len(out) < candles:
+        take = min(1000, candles - len(out))
+        url = (f"{BINANCE}/api/v3/klines?symbol={pair}&interval={interval}"
+               f"&limit={take}")
+        if end_ms is not None:
+            url += f"&endTime={end_ms}"
+        rows = _get_json(url)
+        if not isinstance(rows, list) or not rows:
+            break
+        before = len(out)
+        for row in rows:
+            try:
+                ts = datetime.fromtimestamp(int(row[0]) / 1000, tz=timezone.utc)
+                out[int(row[0])] = Bar(
+                    ts=ts, open=float(row[1]), high=float(row[2]),
+                    low=float(row[3]), close=float(row[4]), volume=float(row[5]))
+            except (ValueError, IndexError, TypeError):
+                continue
+        if len(out) == before:
+            break
+        end_ms = min(out) - 1
+        if len(rows) < take:
+            break
+    bars = [out[k] for k in sorted(out)]
+    if len(bars) < 5:
+        raise FeedError(f"Binance returned {len(bars)} candles for {pair}")
+    _drop_forming_bar(bars, _GRANULARITY[timeframe])
+    return bars[-candles:]
 
 
 def _drop_forming_bar(bars: list[Bar], gran_seconds: int) -> None:
@@ -213,6 +267,9 @@ def fetch(exchange: str, symbol: str, timeframe: str = "1h",
     if exchange == "coinbase":
         from .markets import coinbase_product
         bars = coinbase_candles(coinbase_product(symbol), timeframe, candles)
+    elif exchange == "binance":
+        from .markets import binance_spot
+        bars = binance_candles(binance_spot(symbol), timeframe, candles)
     elif exchange == "kraken":
         from .markets import kraken_pair
         bars = kraken_candles(kraken_pair(symbol), timeframe, candles)

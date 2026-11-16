@@ -67,6 +67,46 @@ allows.
 
 ---
 
+## 2c. Trend forecasting: what the first result says
+
+**Status:** built (`wand forecast`), and it reports **no skill** on real data.
+
+The honest numbers on 2,733 out-of-sample SOL/USDT hourly forecasts (4 months,
+6-bar horizon, purged walk-forward):
+
+| | model | climatology |
+|---|---|---|
+| accuracy | 50.1% | 50.9% |
+| Brier | 0.2564 | 0.2499 |
+| log loss | 0.7076 | — |
+
+Worse than predicting the base rate every time. Calibration was also inverted at
+the top: forecasts of 0.65 resolved 0.49. That is not a bug in the code — it is
+what a small feature set on a nearly-efficient 1h series looks like.
+
+**What would give it a real chance** (each is a contained experiment, and each
+must be scored the same way):
+
+1. **Better features** — funding rate, open-interest change, taker buy/sell
+   imbalance, BTC dominance, cross-asset lead-lag (BTC usually leads alts),
+   time-of-day/session effects. The bars alone throw away most of the signal.
+2. **Better labels** — triple-barrier (did it hit +x% before −y%?) instead of
+   fixed-horizon direction, which is noisy and pays no attention to path.
+3. **Regime-conditional models** — train per volatility regime rather than one
+   model with a regime feature averaged away.
+4. **Calibration** — Platt/isotonic on a held-out slice; the model is
+   overconfident at its extremes.
+5. **Longer history and higher timeframes** — 6h/daily series are less noisy,
+   and there is now a Binance feed with thousands of bars.
+
+**What is NOT the answer:** a bigger model. On this data a deep net would fit
+noise more efficiently, and the Brier score would say so.
+
+**Trigger to continue:** the operator wants to spend time on features 1 and 2,
+which are the two with the best expected return.
+
+---
+
 ## 3. Multi-market, simultaneously
 
 **Status:** not built. One market per instance.

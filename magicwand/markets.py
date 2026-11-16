@@ -104,6 +104,11 @@ def binance_perp(symbol: str) -> str:
     return (symbol or "").split("-")[0].upper() + "USDT"
 
 
+def binance_spot(symbol: str) -> str:
+    """Binance spot pair for a canonical symbol (PAXG-USD -> PAXGUSDT)."""
+    return (symbol or "").split("-")[0].upper() + "USDT"
+
+
 def subreddit_for(symbol: str) -> str:
     m = get(symbol)
     return m.subreddit if m else "CryptoCurrency"

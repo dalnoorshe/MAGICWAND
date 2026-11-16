@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 370 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 383 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -845,6 +845,35 @@ Two rules that make live trading safe to add later:
 
 Live adapters therefore need only implement `connected` + `fetch_equity()`; the
 desk funding and every size calculation follow automatically.
+
+## Forecasting: algorithmic, and scored
+
+```bash
+python3 wand.py forecast --symbol SOL-USD --exchange binance --candles 3000
+```
+
+A logistic regression on nine causal features (returns, MA slope, ATR ratio,
+range position, volume z-score, RSI) estimates **P(close higher in H bars)**.
+It is trained **walk-forward with label purging**: for each test block the model
+sees only labels that resolved before that block began, because a label looking
+6 bars ahead leaks the future across the boundary.
+
+It reports accuracy, Brier, log loss, a calibration table and per-regime splits —
+against the two baselines that matter: the base rate, and a coin flip.
+
+**The first real result is no skill:**
+
+| | model | climatology |
+|---|---|---|
+| accuracy | 50.1% | 50.9% |
+| Brier | 0.2564 | 0.2499 |
+
+The first version of this tool *claimed* an edge because its baseline was
+malformed (it compared against a hard 0/1 prediction, Brier 0.448). The baseline
+is now the base rate, and `beats_base` requires better probabilities **and**
+better-than-coin-flip direction. See `docs/PLAN.md` §2c for what would give it a
+real chance — better features (funding, open interest, taker imbalance,
+cross-asset) and better labels (triple-barrier), not a bigger model.
 
 ## Self-audit: what breaks when you push on it
 

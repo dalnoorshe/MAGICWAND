@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 370 tests
+python3 -m unittest discover -s tests -v  # 383 tests
 ```
 
 `wand audit` runs adversarial scenarios against the real code in throwaway
@@ -63,7 +63,7 @@ These were each learned by breaking them. Do not "improve" them away.
 - **Never weaken the validation gate** to make a strategy pass.
 - **Never trust a silent `str.replace`.** Twice an edit did nothing because the
   indentation or spacing differed, and the result shipped (a UI that threw on
-  every refresh; a README claiming 179 tests). Verify with a test or a grep
+  every refresh; a README claiming 383 tests). Verify with a test or a grep
   after editing, not by assuming the edit applied.
 - **A UI bug is not cosmetic.** One undefined variable aborted the whole refresh
   loop, so autopilot, audit, storage and the feed all looked dead while the
@@ -85,12 +85,13 @@ These were each learned by breaking them. Do not "improve" them away.
 | `magicwand/audit.py` | the scenarios |
 | `magicwand/account.py` | broker → paper → config balance resolution |
 | `magicwand/chat.py` + `web.py` | read-only operator chat with search/fetch |
+| `magicwand/forecast.py` | walk-forward trend model, purged, honestly scored |
 | `docs/PLAN.md` | deferred work, each with its trigger |
 | `docs/PLATFORMS.md` | broker integrations, MT5 caveat |
 
 ## State of play (as of the last session)
 
-- 370 tests, 0 audit gaps, 23 audit passes.
+- 383 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -98,6 +99,12 @@ These were each learned by breaking them. Do not "improve" them away.
 - No live broker exists by design. `live` tier is refused.
 - Proposals were 61% identical reruns until exploration was tightened; the
   funnel card in the console tracks it.
+- The trend forecaster reports **no skill** on real SOL data (50.1% vs 50.9%
+  base rate, Brier worse). Do not "improve" it by weakening the baseline: the
+  first version compared against a hard 0/1 prediction and claimed an edge it
+  did not have. Baselines are climatology + coin flip, and `beats_base` needs
+  both. Next steps are better FEATURES and LABELS, not a bigger model
+  (docs/PLAN.md 2c).
 
 ## Style that has worked here
 

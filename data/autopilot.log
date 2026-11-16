@@ -217,3 +217,4 @@
 [autopilot 08:41:54] tick 4: research: 5/5 readers reported; evidence -0.21 | idea 'sol_social_quiet_long_squeeze' refused: near-duplicate of sol_funding_discount_squeeze_breakout (max para
 [autopilot 08:51:49] autopilot started
 [autopilot 08:52:17] tick 1: research: 5/5 readers reported; evidence -0.17 | idea 'sol_tight_sma_short_hold' refused: near-duplicate of sol_oi_flush_trend_resume (max param difference 9.6%
+[autopilot 09:07:49] tick 2: research: 5/5 readers reported; evidence -0.18 | strategy 'sol_short_horizon_z_fade' rejected: REJECTED: not profitable at realistic costs (-0.08%); dies at 2x 

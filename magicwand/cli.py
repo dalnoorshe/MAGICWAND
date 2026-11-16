@@ -26,6 +26,7 @@ from . import research_loop
 from . import runner
 from .config import Config
 from . import audit as audit_mod
+from . import forecast as forecast_mod
 from . import integrations as integrations_mod
 from . import service as service_mod
 from . import storage as storage_mod
@@ -386,6 +387,42 @@ def cmd_storage(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_forecast(cfg: Config, args) -> int:
+    """Train a trend model walk-forward and report whether it beats the base rate."""
+    symbol = args.symbol or cfg.market.symbol
+    exchange = args.exchange or cfg.market.exchange
+    bars = data_mod.fetch(exchange, symbol, cfg.market.timeframe,
+                          max(args.candles, 400), seed=cfg.seed)
+    ev, tail = forecast_mod.walk_forward(
+        bars, horizon=args.horizon, min_train=args.min_train, block=args.block)
+    print()
+    print(f"  TREND FORECAST — {symbol} @ {cfg.market.timeframe}, "
+          f"horizon {args.horizon} bars")
+    print("  " + "-" * 74)
+    if ev is None:
+        print(f"  not enough history: {len(bars)} bars "
+              f"(need {args.min_train + args.block}+)")
+        return 2
+    print(f"  {ev.summary()}")
+    print(f"  log loss {ev.log_loss:.4f} · base rate {ev.base_rate:.1%}")
+    print("  calibration (predicted vs actual):")
+    for row in ev.calibration:
+        print(f"    p {row['bin']:9s} n={row['n']:4d}  predicted {row['predicted']:.2f}"
+              f"  actual {row['actual']:.2f}")
+    if ev.by_regime:
+        print("  by regime:")
+        for r, v in sorted(ev.by_regime.items()):
+            print(f"    {r:9s} n={v['n']:4d}  accuracy {v['accuracy']:.1%}"
+                  f"  avg p {v['avg_p']:.2f}")
+    if tail:
+        f = tail[0]
+        print(f"  next-bar forecast: p_up={f.p_up:.3f} trend={f.trend:+.2f} "
+              f"({f.regime})")
+        print(f"    claim: {f.claim_text()}")
+    print()
+    return 0 if ev.beats_base else 1
+
+
 def cmd_audit(cfg: Config, args) -> int:
     """Adversarial self-audit: run the scenarios and show what breaks."""
     results = audit_mod.run_all(angle=args.angle)
@@ -499,6 +536,16 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--max-calls", type=int, default=400)
     rs.add_argument("--max-cost", type=float, default=2.0)
     rs.set_defaults(fn=cmd_research)
+
+    fc = sub.add_parser("forecast", help="algorithmic trend forecast, honestly scored")
+    fc.add_argument("--symbol")
+    fc.add_argument("--exchange", choices=["coinbase", "binance", "kraken"],
+                    help="candle source (binance has the deepest history)")
+    fc.add_argument("--candles", type=int, default=3000)
+    fc.add_argument("--horizon", type=int, default=6)
+    fc.add_argument("--min-train", type=int, default=200)
+    fc.add_argument("--block", type=int, default=50)
+    fc.set_defaults(fn=cmd_forecast)
 
     au = sub.add_parser("audit", help="adversarial scenario self-audit")
     au.add_argument("--verbose", action="store_true")

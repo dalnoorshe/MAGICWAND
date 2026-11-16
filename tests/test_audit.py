@@ -120,3 +120,83 @@ class TestTickCost(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestRoutineIntegration(unittest.TestCase):
+    """`wand audit` is part of the routine: it must run at startup, save its
+    result, and be visible in the console."""
+
+    def test_report_is_saved_and_readable(self):
+        from magicwand.audit import load_report, run_all, save_report
+        with tempfile.TemporaryDirectory() as d:
+            results = run_all(angle="durability")
+            body = save_report(d, results, angle="durability")
+            self.assertIn("ts", body)
+            self.assertEqual(body["gaps"], 0)
+            self.assertGreater(body["passes"], 0)
+            back = load_report(d)
+            self.assertEqual(back["gaps"], 0)
+            self.assertEqual(back["angle"], "durability")
+
+    def test_missing_report_is_empty_not_fatal(self):
+        from magicwand.audit import load_report
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(load_report(d), {})
+
+    def test_corrupt_report_is_ignored(self):
+        from magicwand.audit import load_report, report_path
+        with tempfile.TemporaryDirectory() as d:
+            p = report_path(d)
+            p.parent.mkdir(parents=True)
+            p.write_text("{not json")
+            self.assertEqual(load_report(d), {})
+
+    def test_launcher_runs_the_audit_and_can_skip_it(self):
+        import inspect
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "mw_launcher4",
+            str(Path(__file__).resolve().parents[1] / "magicwand-launcher.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        src = inspect.getsource(mod)
+        self.assertIn("_audit.run_all", src)
+        self.assertIn("--skip-audit", src)
+
+    def test_console_shows_the_audit(self):
+        html = (Path(__file__).resolve().parents[1]
+                / "magicwand" / "dashboard.html").read_text()
+        self.assertIn('id="auditbadge"', html)
+        self.assertIn("renderAudit", html)
+        self.assertIn('id="auditLine"', html)
+
+    def test_state_exposes_the_report(self):
+        import inspect
+        from magicwand import dashboard
+        self.assertIn('"audit"', inspect.getsource(dashboard.build_state))
+
+
+class TestMemoryFile(unittest.TestCase):
+    """The lessons must survive a context reset: AGENTS.md is the memory."""
+
+    def _memory(self) -> str:
+        return (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text()
+
+    def test_memory_exists_and_names_the_audit(self):
+        text = self._memory()
+        self.assertIn("wand.py audit", text)
+        self.assertIn("routine", text.lower())
+
+    def test_memory_records_the_hard_won_invariants(self):
+        text = self._memory().lower()
+        for phrase in ("fail closed", "never guess a balance", "void only",
+                       "bars are not ticks", "non-finite", "no lookahead"):
+            self.assertIn(phrase.replace("void only", "veto only"), text, phrase)
+
+    def test_memory_forbids_destructive_data_commands(self):
+        self.assertIn("Never run `rm` against `data/`", self._memory())
+
+    def test_memory_states_the_honest_blockers(self):
+        text = self._memory()
+        self.assertIn("approved **0** strategies", text)
+        self.assertIn("$50", text)

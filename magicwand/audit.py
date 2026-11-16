@@ -625,6 +625,52 @@ DURABILITY: list[Callable[[], Outcome]] = [
 ]
 
 
+# --------------------------------------------------------------------------
+# Report persistence — the audit is part of the routine, so its last result is
+# kept where the console can show it.
+# --------------------------------------------------------------------------
+
+def report_path(root: str | Path) -> Path:
+    return Path(root) / "data" / "audit.json"
+
+
+def save_report(root: str | Path, results: list[Outcome],
+                angle: str = "all") -> dict:
+    root = Path(root)
+    gaps = [r for r in results if r.verdict == "GAP"]
+    body = {
+        "ts": iso(utcnow()),
+        "angle": angle,
+        "gaps": len(gaps),
+        "notes": sum(1 for r in results if r.verdict == "INFO"),
+        "passes": sum(1 for r in results if r.verdict == "PASS"),
+        "ok": not gaps,
+        "findings": [
+            {"name": r.name, "verdict": r.verdict, "detail": r.detail,
+             "fix": r.fix, "angle": r.angle}
+            for r in sorted(results, key=lambda x: {"GAP": 0, "INFO": 1, "PASS": 2}[x.verdict])
+        ],
+    }
+    try:
+        p = report_path(root)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(body, indent=2))
+    except OSError:
+        pass
+    return body
+
+
+def load_report(root: str | Path) -> dict:
+    p = report_path(root)
+    if not p.exists():
+        return {}
+    try:
+        d = json.loads(p.read_text())
+        return d if isinstance(d, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
 def run_all(verbose: bool = True, angle: str = "all") -> list[Outcome]:
     fns: list[Callable[[], Outcome]] = []
     if angle in ("all", "behaviour"):

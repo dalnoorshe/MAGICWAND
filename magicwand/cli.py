@@ -389,6 +389,7 @@ def cmd_storage(cfg: Config, args) -> int:
 def cmd_audit(cfg: Config, args) -> int:
     """Adversarial self-audit: run the scenarios and show what breaks."""
     results = audit_mod.run_all(angle=args.angle)
+    saved = audit_mod.save_report(".", results, angle=args.angle)
     order = {"GAP": 0, "INFO": 1, "PASS": 2}
     results.sort(key=lambda r: order.get(r.verdict, 3))
     gaps = [r for r in results if r.verdict == "GAP"]
@@ -405,8 +406,9 @@ def cmd_audit(cfg: Config, args) -> int:
     print(f"  {len(gaps)} gap(s), "
           f"{sum(1 for r in results if r.verdict == 'INFO')} note(s), "
           f"{sum(1 for r in results if r.verdict == 'PASS')} pass(es)")
+    print(f"  saved to {audit_mod.report_path('.')}")
     print()
-    return 0
+    return 0 if not gaps else 1
 
 
 def cmd_keys(cfg: Config, args) -> int:

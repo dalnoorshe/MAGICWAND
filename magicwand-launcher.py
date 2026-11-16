@@ -61,7 +61,7 @@ def _bad(msg: str) -> str:
     return f"  {RED}✗{OFF} {msg}"
 
 
-def preflight(force_offline: bool = False) -> bool:
+def preflight(force_offline: bool = False, skip_audit: bool = False) -> bool:
     """Checks that matter. Returns False only if we cannot start at all."""
     print(f"\n{BOLD}MAGICWAND{OFF} {DIM}— paper-trading system{OFF}\n")
     ok = True
@@ -113,6 +113,23 @@ def preflight(force_offline: bool = False) -> bool:
         print(_ok(f"markets available: {', '.join(_m.symbols())}"))
     except Exception:  # noqa: BLE001
         pass
+    if not skip_audit:
+        try:
+            from magicwand import audit as _audit
+            results = _audit.run_all(angle="all")
+            saved = _audit.save_report(ROOT, results)
+            if saved["gaps"]:
+                print(_bad(f"self-audit: {saved['gaps']} GAP(S) — run "
+                           f"`python3 wand.py audit --verbose`"))
+                for f in saved["findings"]:
+                    if f["verdict"] == "GAP":
+                        print(f"    - {f['name']}: {f['detail'][:90]}")
+            else:
+                print(_ok(f"self-audit: {saved['passes']} pass, "
+                          f"{saved['notes']} note, 0 gaps"))
+        except Exception as e:  # noqa: BLE001 - never block startup on the audit
+            print(_warn(f"self-audit could not run: {type(e).__name__}"))
+
     print(_ok("market data: public feeds, no key needed"))
     print(_warn("broker: none — this build cannot place real orders (paper only)"))
     return ok
@@ -148,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="autopilot seconds between ticks (0 = start idle)")
     ap.add_argument("--offline", action="store_true",
                     help="force the offline stub model even if a key is connected")
+    ap.add_argument("--skip-audit", action="store_true",
+                    help="don't run the self-audit at startup (~4s)")
     ap.add_argument("--symbol", help="market to trade, e.g. PAXG-USD")
     ap.add_argument("--exchange", choices=["coinbase", "kraken"],
                     help="candle venue")
@@ -157,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="run detached in the background (survives closing this terminal)")
     args = ap.parse_args(argv)
 
-    if not preflight(args.offline):
+    if not preflight(args.offline, args.skip_audit):
         return 1
 
     from magicwand.service import detect_instances

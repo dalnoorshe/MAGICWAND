@@ -193,6 +193,7 @@
   <div class="kpi"><span class="l">tier</span><span class="badge b-dim" id="tier">—</span></div>
   <div class="kpi"><span class="l">ledger</span><span class="badge" id="chain">—</span></div>
   <div class="kpi"><span class="l">autopilot</span><span class="badge b-dim" id="autobadge">idle</span></div>
+  <div class="kpi"><span class="l">audit</span><span class="badge b-dim" id="auditbadge">—</span></div>
   <div class="grow"></div>
   <button class="primary" id="btnAuto">Start autopilot</button>
   <button class="primary" id="btnTick">Run one tick</button>
@@ -268,6 +269,7 @@
       <button id="btnBackup">Back up now</button>
       <button id="btnPrune">Prune old</button>
     </div>
+    <div class="dimmer" id="auditLine" style="margin-top:8px">self-audit: —</div>
     <div class="dimmer" style="margin-top:8px">
       Everything stays on this machine. No database, no cloud, no account.
       Backups are written to <span class="mono">backups/</span> with mode 0600.
@@ -567,6 +569,22 @@ function renderStrategies(list) {
       <td class="num dim">${pct((s.metrics||{}).train_return)}</td>
       <td>${s.deployed ? '<span class="badge b-good">deployed</span>' : '<span class="badge b-dim">idle</span>'}</td>
     </tr>`).join("")}</table>`;
+}
+
+function renderAudit(a) {
+  const b = $("auditbadge");
+  if (!a || a.ts === undefined) { b.textContent = "never"; b.className = "badge b-dim"; return; }
+  const gaps = Number(a.gaps || 0);
+  b.textContent = gaps ? `${gaps} gap${gaps === 1 ? "" : "s"}` : "clean";
+  b.className = "badge " + (gaps ? "b-bad" : "b-good");
+  const when = new Date(a.ts).toLocaleString();
+  b.title = `self-audit ${when}: ${a.passes} pass, ${a.notes} note, ${a.passes && a.gaps || gaps ? gaps : 0} gap`;
+  const box = $("auditLine");
+  if (box) {
+    box.innerHTML = gaps
+      ? `<span class="bad">${gaps} gap(s)</span> · last run ${esc(when)}`
+      : `<span class="good">clean</span> · ${a.passes} pass / ${a.notes} note · last run ${esc(when)}`;
+  }
 }
 
 function renderProposals(p) {
@@ -1148,6 +1166,7 @@ async function refresh() {
     renderStorage();
     renderBackups();
     renderProposals(s.proposals);
+    renderAudit(s.audit);
     if ($("chatDrawer").classList.contains("open") && !chatBusy) loadChat();
   } catch (e) {
     toast("dashboard error: " + e.message);

@@ -204,3 +204,4 @@
 [autopilot 05:33:21] tick 2: research: 5/5 readers reported; evidence -0.40; VETO by derivatives, news, onchain | strategy 'sol_slow_grind_reversion' rejected: REJECTED: not profitable at r
 [autopilot 05:48:52] tick 3: research: 5/5 readers reported; evidence -0.37; VETO by derivatives, news, onchain | strategy 'sol_fast_sma_squeeze_trend' rejected: REJECTED: not profitable at
 [autopilot 06:04:27] tick 4: research: 5/5 readers reported; evidence -0.30; VETO by derivatives, news | strategy 'sol_wide_range_breakout_panic_flush' rejected: REJECTED: not profitable at
+[autopilot 06:20:01] tick 5: research: 5/5 readers reported; evidence -0.32; VETO by derivatives, news | strategy 'sol_short_lookback_squeeze_breakout' rejected: REJECTED: not profitable at

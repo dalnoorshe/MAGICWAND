@@ -238,6 +238,7 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
         "autopilot": autopilot_raw,
         "settings": SettingsStore(data / "settings.json").public_dict(),
         "models": load_models_cache(root),
+        "audit": _read_json(data / "audit.json", {}),
         "backups": (get_backups(root, cfg).status()
                     if (root / "data").exists() else {}),
         "model_mode": ("live" if resolve_mode(root, force_offline) == "live"

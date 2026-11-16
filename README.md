@@ -806,6 +806,21 @@ So the honest limit is "we ran out of untried ideas", not "we ran out of
 budget". The proposer is told what it already tried, so it must go somewhere
 new.
 
+## Routine: the audit runs itself
+
+The project keeps its own operating memory in [`AGENTS.md`](AGENTS.md) — the
+invariants, the mistakes, and the commands. Read it before changing anything.
+
+`wand audit` is part of the routine, not a special occasion:
+
+- **at startup**, `./start.sh` runs it (~4s) and refuses to be quiet about gaps;
+  `--skip-audit` opts out
+- **the result is saved** to `data/audit.json`
+- **the console shows it** — an `audit` badge in the header (green *clean* / red
+  *N gaps*) and the last run in the Local storage card
+- `python3 wand.py audit` exits non-zero if there are gaps, so it can gate a
+  commit
+
 ## The account balance: sourced, never guessed
 
 `magicwand/account.py` resolves equity in one place, in this order:

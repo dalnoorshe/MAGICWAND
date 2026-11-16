@@ -94,10 +94,41 @@ def _require_pil():
         raise VisionError("Pillow is required to render charts") from e
 
 
+def find_levels(bars: list[Bar], k: int = 3, max_levels: int = 3,
+                tolerance: float = 0.004) -> dict:
+    """Observed swing highs and lows — the levels a trader would mark.
+
+    These are FACTS about the window that was drawn: a pivot high is a bar whose
+    high exceeds the k bars either side. They are not projections: a level is only
+    drawn where price actually turned, and it is never extended into the future.
+
+    Returns {"resistance": [prices], "support": [prices]}.
+    """
+    highs: list[tuple[float, int]] = []
+    lows: list[tuple[float, int]] = []
+    n = len(bars)
+    for i in range(k, n - k):
+        window = bars[i - k: i + k + 1]
+        if bars[i].high >= max(b.high for b in window):
+            highs.append((bars[i].high, i))
+        if bars[i].low <= min(b.low for b in window):
+            lows.append((bars[i].low, i))
+
+    def thin(points: list[tuple[float, int]]) -> list[tuple[float, int]]:
+        out: list[tuple[float, int]] = []
+        for price, idx in sorted(points, reverse=True):
+            if all(abs(price - p) / max(p, 1e-9) > tolerance for p, _ in out):
+                out.append((price, idx))
+        return out[:max_levels]
+
+    return {"resistance": thin(highs), "support": sorted(thin(lows))}
+
+
 def render_chart(bars: list[Bar], title: str = "SOL-USD 1h",
                  width: int = 1280, height: int = 720,
                  max_bars: int = 120, ma_fast: int = 12,
-                 ma_slow: int = 48) -> Image:
+                 ma_slow: int = 48, levels: bool = True,
+                 position: dict | None = None) -> Image:
     """Draw a candlestick chart with moving averages and volume.
 
     Pure PIL so it works anywhere Python does. Colours are chosen for a dark
@@ -179,6 +210,52 @@ def render_chart(bars: list[Bar], title: str = "SOL-USD 1h",
             bot = top + 1
         d.rectangle([cx - w / 2, top, cx + w / 2, bot], fill=colour)
 
+    # ---- observed levels: drawn only where price actually turned ----
+    if levels:
+        lv = find_levels(bars)
+        used_label_y: list[float] = []
+        for side, colour, mark in (("resistance", (255, 93, 108), "R"),
+                                   ("support", (53, 208, 127), "S")):
+            for price, idx in lv[side]:
+                y = y_of(price)
+                if not (pad_t < y < pad_t + price_h):
+                    continue
+                x0 = max(pad_l, x_of(idx) - 2 * step)
+                x1 = min(width - pad_r, x_of(idx) + 8 * step)
+                d.line([(x0, y), (x1, y)], fill=colour, width=1)
+                # label to the right of the dash, nudged if it would overlap
+                ly = y - 7
+                while any(abs(ly - u) < 13 for u in used_label_y):
+                    ly += 13
+                if pad_t < ly < pad_t + price_h - 10:
+                    d.text((min(x1 + 6, width - pad_r - 64), ly),
+                           f"{mark} {price:,.2f}", fill=colour, font=font_small)
+                    used_label_y.append(ly)
+
+    # last traded price: a dotted reference, not a forecast
+    y_last = y_of(bars[-1].close)
+    if pad_t < y_last < pad_t + price_h:
+        x = pad_l
+        while x < width - pad_r:
+            d.line([(x, y_last), (min(x + 6, width - pad_r), y_last)],
+                   fill=(198, 205, 218), width=1)
+            x += 12
+
+    # an open position: entry, stop, target — the only lines that matter to risk
+    if position:
+        for key, colour, label in (
+                ("entry_price", (110, 168, 254), "entry"),
+                ("stop", (255, 93, 108), "stop"),
+                ("target", (53, 208, 127), "target")):
+            val = position.get(key)
+            if not val:
+                continue
+            y = y_of(float(val))
+            if pad_t < y < pad_t + price_h:
+                d.line([(pad_l, y), (width - pad_r, y)], fill=colour, width=1)
+                d.text((pad_l + 6, y - 16), f"{label} {float(val):,.2f}",
+                       fill=colour, font=font_small)
+
     # volume
     vmax = max((b.volume for b in bars), default=1.0) or 1.0
     vol_top = height - vol_h - 18
@@ -195,7 +272,8 @@ def render_chart(bars: list[Bar], title: str = "SOL-USD 1h",
            fill=txt, font=font_title)
     d.text((pad_l, 34),
            f"{bars[0].ts:%Y-%m-%d %H:%M} → {last.ts:%Y-%m-%d %H:%M} UTC  ·  "
-           f"{n} candles  ·  MA{ma_fast} blue  ·  MA{ma_slow} purple",
+           f"{n} candles  ·  MA{ma_fast} blue  ·  MA{ma_slow} purple  ·  "
+           f"R/S observed levels  ·  NO projection",
            fill=dim, font=font_small)
 
     buf = io.BytesIO()

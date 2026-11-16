@@ -212,3 +212,8 @@
 [autopilot 07:39:31] tick 10: research: 5/5 readers reported; evidence -0.20 | strategy 'sol_oi_drain_slow_breakout' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies at 2
 [autopilot 07:54:54] autopilot started
 [autopilot 07:55:24] tick 1: research: 5/5 readers reported; evidence -0.23 | strategy 'sol_deep_oi_drain_mean_revert' rejected: REJECTED: dies at 2x costs — the fee assumption was doing th
+[autopilot 08:10:55] tick 2: research: 5/5 readers reported; evidence -0.21; single-source veto declined from derivatives | idea 'sol_quiet_breakout_vol_expansion' refused: near-duplicate o
+[autopilot 08:26:25] tick 3: research: 5/5 readers reported; evidence -0.23; single-source veto declined from derivatives | strategy 'sol_neg_funding_short_squeeze_trend' rejected: REJECTED
+[autopilot 08:41:54] tick 4: research: 5/5 readers reported; evidence -0.21 | idea 'sol_social_quiet_long_squeeze' refused: near-duplicate of sol_funding_discount_squeeze_breakout (max para
+[autopilot 08:51:49] autopilot started
+[autopilot 08:52:17] tick 1: research: 5/5 readers reported; evidence -0.17 | idea 'sol_tight_sma_short_hold' refused: near-duplicate of sol_oi_flush_trend_resume (max param difference 9.6%

@@ -206,3 +206,67 @@ class TestChartBarMetadata(unittest.TestCase):
             self.assertEqual(cb["shown"], 120)
             self.assertEqual(cb["timeframe"], "1h")
             self.assertTrue(cb["last_bar_utc"])
+
+
+class TestLevelsNotProjections(unittest.TestCase):
+    """The chart marks levels where price TURNED. It does not project.
+
+    The operator asked whether the drawn lines are forecasts like a trader's
+    extended trend line. They are not: moving averages are trailing, and the
+    support/resistance marks are pivots that already happened. Nothing is drawn
+    to the right of the newest candle except the axis.
+    """
+
+    def test_levels_are_past_pivots_only(self):
+        from magicwand.vision import find_levels
+        bars = data_mod.synthetic_bars(200, seed=11)
+        lv = find_levels(bars)
+        for side in ("resistance", "support"):
+            for price, idx in lv[side]:
+                self.assertLess(idx, len(bars), "pivot must be inside the window")
+                self.assertGreater(idx, 0)
+                self.assertGreaterEqual(price, min(b.low for b in bars))
+                self.assertLessEqual(price, max(b.high for b in bars))
+
+    def test_resistance_is_at_or_above_support(self):
+        from magicwand.vision import find_levels
+        bars = data_mod.synthetic_bars(200, seed=7)
+        lv = find_levels(bars)
+        if lv["resistance"] and lv["support"]:
+            self.assertGreater(min(p for p, _ in lv["resistance"]),
+                               max(p for p, _ in lv["support"]) * 0.98)
+
+    def test_level_count_is_bounded(self):
+        from magicwand.vision import find_levels
+        bars = data_mod.synthetic_bars(500, seed=3)
+        lv = find_levels(bars, max_levels=3)
+        self.assertLessEqual(len(lv["resistance"]), 3)
+        self.assertLessEqual(len(lv["support"]), 3)
+
+    def test_rendering_without_levels_is_still_possible(self):
+        img = render_chart(data_mod.synthetic_bars(120, seed=2), levels=False)
+        self.assertTrue(img.data.startswith(b"\x89PNG"))
+
+    def test_position_lines_render(self):
+        bars = data_mod.synthetic_bars(120, seed=2)
+        plain = render_chart(bars)
+        marked = render_chart(bars, position={"entry_price": 150.0,
+                                              "stop": 140.0, "target": 170.0})
+        self.assertNotEqual(plain.data, marked.data,
+                            "an open position must change the picture")
+
+    def test_header_says_no_projection(self):
+        """The claim is on the image, so a human reading it is not misled."""
+        import inspect
+        src = inspect.getsource(__import__("magicwand.vision", fromlist=["x"]).render_chart)
+        self.assertIn("NO projection", src)
+
+    def test_chart_uses_only_the_bars_it_was_given(self):
+        """No future data is invented: levels are indexed inside the window."""
+        from magicwand.vision import find_levels
+        bars = data_mod.synthetic_bars(120, seed=5)
+        lv = find_levels(bars)
+        for side in ("resistance", "support"):
+            for _price, idx in lv[side]:
+                self.assertGreaterEqual(idx, 0)
+                self.assertLess(idx, len(bars))

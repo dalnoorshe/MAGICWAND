@@ -297,7 +297,11 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
         # Always render the chart (local + free); the agent degrades honestly
         # when the model cannot actually see it.
         vision=vision,
-        bars=bars, chart_title=f"{symbol} {cfg.market.timeframe}")
+        bars=bars, chart_title=f"{symbol} {cfg.market.timeframe}",
+        position=(({"entry_price": desk.state.position.entry_price,
+                    "stop": desk.state.position.stop,
+                    "target": desk.state.position.target}
+                   if desk.state.position else None)))
     rep.research_decision = cycle.report.decision
     rep.notes.append(f"research: {cycle.report.summary}")
 

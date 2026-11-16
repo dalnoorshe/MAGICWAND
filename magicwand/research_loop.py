@@ -165,7 +165,8 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
               ledger: Optional[Ledger] = None,
               vision: bool = False,
               bars: Optional[list] = None,
-              chart_title: str = "") -> ResearchCycle:
+              chart_title: str = "",
+              position: Optional[dict] = None) -> ResearchCycle:
     root = Path(root)
     now = now or utcnow()
     symbol = symbol or cfg.market.symbol
@@ -189,7 +190,8 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
     if vision and bars:
         chart_verdict = read_chart(
             bars, client, title=chart_title or f"{symbol} {cfg.market.timeframe}",
-            symbol=symbol, save_dir=root / "data" / "charts")
+            symbol=symbol, save_dir=root / "data" / "charts",
+            position=position)
         if chart_verdict.error:
             ledger.append("vision_degraded",
                           {"agent": "charts", "error": chart_verdict.error[:300]})

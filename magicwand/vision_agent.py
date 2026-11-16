@@ -79,7 +79,8 @@ def parse_chart_verdict(raw: str) -> AgentVerdict:
 def read_chart(bars: list[Bar], client: DeepSeekClient, title: str,
                symbol: str, extra_context: str = "",
                save_dir: Optional[str | Path] = None,
-               max_bars: int = 120) -> AgentVerdict:
+               max_bars: int = 120,
+               position: dict | None = None) -> AgentVerdict:
     """Render the chart, show it to the model, return a validated verdict.
 
     The image shows the trailing `max_bars` bars only. That window is stated in
@@ -88,7 +89,8 @@ def read_chart(bars: list[Bar], client: DeepSeekClient, title: str,
     thing.
     """
     try:
-        img = render_chart(bars, title=title, max_bars=max_bars)
+        img = render_chart(bars, title=title, max_bars=max_bars,
+                           position=position)
     except VisionError as e:
         return AgentVerdict(agent="charts", error=f"render failed: {e}")
 

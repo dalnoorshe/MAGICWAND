@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 179 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 360 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger

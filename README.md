@@ -1016,6 +1016,26 @@ reality check, and then fund it from savings, not from hope.
 - [ ] `Broker` protocol, then paper/demo adapters (Alpaca → OANDA → Binance → MT5)
 - [ ] Live execution — only after a paper strategy survives the reality check, at 1% risk, with a kill switch
 
+## Placing an actual order
+
+Every venue has an authenticated buy/sell endpoint; this repo implements **none**
+of them. Full reference in [`docs/ORDER_API.md`](docs/ORDER_API.md).
+
+| Venue | Endpoint | Test path |
+|---|---|---|
+| Binance Spot | `POST /api/v3/order`, HMAC-signed | `testnet.binance.vision` |
+| Kraken | `POST /0/private/AddOrder`, API-Sign | small live account only |
+| Coinbase Advanced | `POST /api/v3/brokerage/orders` | limited sandbox |
+| Alpaca | `POST /v2/orders` | free paper host |
+| OANDA | `POST /v3/accounts/{id}/orders` | free practice |
+| MetaTrader 5 | `order_send()` (no REST) | demo account, Windows only |
+
+Market data needs no key — that is why prices work today without an account.
+Trading is the only part that needs credentials, and it stays unimplemented
+until a strategy survives the gate. The doc lists what actually breaks in
+production: clock skew, duplicate orders without a client order id, partial
+fills, rate limits, tick-size rounding, symbol translation, reconciliation.
+
 ## Platforms (planned)
 
 Where this could trade, in the order that is safe rather than the order that is

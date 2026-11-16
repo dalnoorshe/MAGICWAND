@@ -173,6 +173,18 @@ mode with its own budget and its own log, not smuggled into the chat box.
 
 ---
 
+## 5b. A testnet order adapter
+
+**Status:** not built. Reference: `docs/ORDER_API.md`.
+**Trigger:** a strategy passes the gate, or the operator wants to rehearse
+plumbing with fake money.
+
+Order of work: `Broker` protocol → read-only reconcile → testnet orders with a
+client order id on every request → one instrument at venue minimum with a hard
+cap → only then reconsider the `live` tier. Python stdlib can do HMAC-SHA256 and
+Ed25519 is available via `cryptography` if needed; Binance and Alpaca test hosts
+exist so nothing has to touch real money to prove it works.
+
 ## 6. Live execution
 
 **Status:** not built, by design. See `docs/PLATFORMS.md`.

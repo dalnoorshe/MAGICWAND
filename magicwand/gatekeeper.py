@@ -99,8 +99,13 @@ TUNABLE_BOUNDS: dict[str, tuple[float, float]] = {
 
 @dataclass
 class Policy:
-    """The operator's current, evolved behaviour. All within tier ceilings."""
-    tier: RiskTier = RiskTier.PAPER_DESK
+    """The operator's current, evolved behaviour. All within tier ceilings.
+
+    The DEFAULT tier is read-only. A missing or corrupted policy file must fall
+    back to the least authority, not the most: failing open here would mean a
+    truncated file silently enables trading.
+    """
+    tier: RiskTier = RiskTier.RESEARCH
     risk_per_trade: float = 0.01
     stop_atr_mult: float = 2.0
     target_atr_mult: float = 4.0

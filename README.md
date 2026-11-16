@@ -806,10 +806,35 @@ So the honest limit is "we ran out of untried ideas", not "we ran out of
 budget". The proposer is told what it already tried, so it must go somewhere
 new.
 
+## The account balance: sourced, never guessed
+
+`magicwand/account.py` resolves equity in one place, in this order:
+
+1. **`broker.fetch_equity()`** — when a connected adapter reports a balance
+2. **`data/state.json`** — the paper parent account
+3. **`cfg.risk.equity`** — the configured starting balance
+
+The console shows **which source** was used, and a fallback is flagged `stale` —
+a silent default is how a system believes it has $50 when it has $812.
+
+Two rules that make live trading safe to add later:
+
+- **A connected broker that cannot report a balance is an error, not a guess.**
+  `resolve_account` raises rather than substituting the config value, because
+  sizing real trades on an assumed number is the one thing genuinely worse than
+  not trading.
+- **Corruption fails closed.** A truncated `desk.json` disables trading and is
+  preserved as evidence (it used to silently reset the pot to $0.00). A corrupt
+  `policy.json` falls back to **research** (it used to fall back to
+  `paper_desk` — a corrupt file *granted* trading authority).
+
+Live adapters therefore need only implement `connected` + `fetch_equity()`; the
+desk funding and every size calculation follow automatically.
+
 ## Self-audit: what breaks when you push on it
 
 ```bash
-python3 wand.py audit --verbose    # 16 adversarial scenarios against the real code
+python3 wand.py audit [--angle behaviour|durability] [--verbose]
 ```
 
 It runs each scenario in a throwaway directory and reports what actually

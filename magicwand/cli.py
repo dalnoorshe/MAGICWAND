@@ -388,7 +388,7 @@ def cmd_storage(cfg: Config, args) -> int:
 
 def cmd_audit(cfg: Config, args) -> int:
     """Adversarial self-audit: run the scenarios and show what breaks."""
-    results = audit_mod.run_all()
+    results = audit_mod.run_all(angle=args.angle)
     order = {"GAP": 0, "INFO": 1, "PASS": 2}
     results.sort(key=lambda r: order.get(r.verdict, 3))
     gaps = [r for r in results if r.verdict == "GAP"]
@@ -500,6 +500,8 @@ def main(argv: list[str] | None = None) -> int:
 
     au = sub.add_parser("audit", help="adversarial scenario self-audit")
     au.add_argument("--verbose", action="store_true")
+    au.add_argument("--angle", choices=["all", "behaviour", "durability"],
+                    default="all")
     au.set_defaults(fn=cmd_audit)
 
     k = sub.add_parser("keys", help="what API keys are needed, and what is connected")

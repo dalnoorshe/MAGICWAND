@@ -45,6 +45,13 @@ class Bar:
     def __post_init__(self) -> None:
         if self.ts.tzinfo is None:
             raise ValueError("Bar.ts must be timezone-aware (UTC)")
+        # NaN/inf prices must never enter the system: NaN comparisons are all
+        # False, so a NaN notional slips past every `if x < minimum` guard and
+        # poisons the portfolio silently.
+        for name in ("open", "high", "low", "close", "volume"):
+            v = getattr(self, name)
+            if not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+                raise ValueError(f"non-finite {name} at {self.ts}: {v!r}")
         if self.high < max(self.open, self.close) or self.low > min(self.open, self.close):
             raise ValueError(f"inconsistent OHLC bar at {self.ts}")
         if self.low <= 0 or self.high <= 0:

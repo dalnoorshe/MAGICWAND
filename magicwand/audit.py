@@ -40,6 +40,7 @@ class Outcome:
     detail: str
     fix: str = ""
     extra: dict = field(default_factory=dict)
+    angle: str = "behaviour"        # behaviour | durability
 
 
 def _cfg(exchange: str = "synthetic", candles: int = 400) -> Config:
@@ -359,9 +360,279 @@ def _offline_client():
     return DeepSeekClient(fake=fake_canned)
 
 
-def run_all(verbose: bool = True) -> list[Outcome]:
+# --------------------------------------------------------------------------
+# Angle 2: durability, restarts and accounting
+#
+# This is where money systems fail quietly: a truncated state file, a balance
+# that silently reverts to a default, a restart that forgets a position, or a
+# NaN that slips past every comparison because NaN < x is always False.
+# --------------------------------------------------------------------------
+
+def d_restart_preserves_position() -> Outcome:
+    """A restart must not forget an open position or its stop."""
+    with tempfile.TemporaryDirectory() as d:
+        cfg = _cfg()
+        dcfg = DeskConfig(enabled=True, tier=RiskTier.PAPER_DESK)
+        desk = AgentDesk(cfg, dcfg, root=d)
+        desk.fund(5000.0)
+        out = desk.open_trade("SOL-USD", 80.0, 2.0, "charts", "x", 0.02, 0.9)
+        if not out.get("ok"):
+            return Outcome("restart keeps position", "INFO",
+                           f"could not open a position to test: {out.get('reason')}",
+                           angle="durability")
+        desk.advance_bars(utcnow())
+        reloaded = AgentDesk(cfg, dcfg, root=d)
+        p = reloaded.state.position
+        if p is None or abs(p.stop - desk.state.position.stop) > 1e-9:
+            return Outcome("restart keeps position", "GAP",
+                           "position or stop lost across a restart",
+                           angle="durability")
+        if p.bars_held != 1:
+            return Outcome("restart keeps position", "GAP",
+                           f"bars_held not persisted ({p.bars_held})",
+                           angle="durability")
+        return Outcome("restart keeps position", "PASS",
+                       f"position, stop {p.stop:.2f} and bars_held survived",
+                       angle="durability")
+
+
+def d_corrupt_desk_refuses() -> Outcome:
+    """A truncated desk.json must not look like 'no position, zero cash'."""
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "data").mkdir()
+        (root / "data" / "desk.json").write_text('{"pot": 4.5, "trades": [')
+        desk = AgentDesk(_cfg(), DeskConfig(enabled=True,
+                         tier=RiskTier.PAPER_DESK), root=root)
+        out = desk.open_trade("SOL-USD", 80.0, 2.0, "charts", "x", 0.02, 0.99)
+        preserved = (root / "data" / "desk.json").read_text().startswith('{"pot": 4.5')
+        if out.get("ok"):
+            return Outcome("corrupt desk.json", "GAP",
+                           "traded on a corrupt state file", angle="durability")
+        if not preserved:
+            return Outcome("corrupt desk.json", "GAP",
+                           "the damaged file was overwritten, destroying evidence",
+                           angle="durability")
+        return Outcome("corrupt desk.json", "PASS",
+                       "trading refused, file preserved as evidence",
+                       angle="durability")
+
+
+def d_corrupt_policy_fails_closed() -> Outcome:
+    """A corrupt policy must LOSE authority, not gain it."""
+    from .gatekeeper import Policy, RiskTier as T
+    from .reflect import PolicyStore
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "policy.json"
+        p.write_text("{not json")
+        loaded = PolicyStore(p).load()
+        if loaded.tier != T.RESEARCH:
+            return Outcome("corrupt policy", "GAP",
+                           f"fell back to {loaded.tier.name} — authority gained "
+                           f"by corruption", angle="durability")
+        fresh = PolicyStore(Path(d) / "absent.json").load()
+        if fresh.tier != T.RESEARCH:
+            return Outcome("corrupt policy", "GAP",
+                           "a fresh install is not read-only", angle="durability")
+        return Outcome("corrupt policy", "PASS",
+                       "corrupt or missing policy = read-only (research)",
+                       angle="durability")
+
+
+def d_corrupt_account_is_flagged() -> Outcome:
+    """A broken state file must not silently become a default balance."""
+    from .account import resolve_account
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "data").mkdir()
+        (root / "data" / "state.json").write_text("{broken")
+        snap = resolve_account(root, _cfg())
+        if snap.source == "paper":
+            return Outcome("corrupt account", "GAP",
+                           "corrupt state.json reported as a paper balance",
+                           angle="durability")
+        if not snap.stale:
+            return Outcome("corrupt account", "GAP",
+                           "fallback to config was not flagged as stale",
+                           angle="durability")
+        return Outcome("corrupt account", "PASS",
+                       f"fell back to {snap.source}, flagged stale, reason given",
+                       angle="durability")
+
+
+def d_broker_without_balance_is_refused() -> Outcome:
+    """Connected to a real account but no balance? Never guess."""
+    from .account import AccountError, resolve_account
+
+    class BadBroker:
+        connected = True
+        name = "test-broker"
+        def fetch_equity(self):
+            raise TimeoutError("venue timed out")
+
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            resolve_account(d, _cfg(), broker=BadBroker())
+            return Outcome("broker balance unreadable", "GAP",
+                           "a guess was used while a broker was connected",
+                           angle="durability")
+        except AccountError as e:
+            return Outcome("broker balance unreadable", "PASS",
+                           f"refused: {str(e)[:70]}", angle="durability")
+
+
+def d_broker_balance_is_counted() -> Outcome:
+    """When a broker DOES report a balance, that number wins."""
+    from .account import resolve_account
+
+    class GoodBroker:
+        connected = True
+        name = "paper-broker"
+        def fetch_equity(self):
+            return 812.34
+
+    with tempfile.TemporaryDirectory() as d:
+        (Path(d) / "data").mkdir()
+        (Path(d) / "data" / "state.json").write_text('{"equity": 50}')
+        snap = resolve_account(d, _cfg(), broker=GoodBroker())
+        if snap.source != "broker" or abs(snap.equity - 812.34) > 1e-9:
+            return Outcome("broker balance counted", "GAP",
+                           f"used {snap.source} ({snap.equity}) instead of the "
+                           f"broker's 812.34", angle="durability")
+        return Outcome("broker balance counted", "PASS",
+                       "live balance 812.34 used over the stale paper file",
+                       angle="durability")
+
+
+def d_cash_conserved() -> Outcome:
+    """A flat round trip must change cash by exactly the trade's net P&L."""
+    with tempfile.TemporaryDirectory() as d:
+        cfg = _cfg()
+        broker = PaperBroker(cfg.costs, cfg.risk)
+        pf = Portfolio(cash=1000.0)
+        now = utcnow()
+        broker.buy(pf, 80.0, 1.0, now, "t", stop=78.0)
+        t = broker.sell(pf, 80.0, now, "flat")
+        changed = pf.cash - 1000.0
+        if abs(changed - t.net) > 1e-9:
+            return Outcome("cash conservation", "GAP",
+                           f"cash changed by {changed:.6f} but the trade reports "
+                           f"net {t.net:.6f}", angle="durability")
+        # A flat round trip must LOSE money (fees on both sides), never gain.
+        if not (changed < 0):
+            return Outcome("cash conservation", "GAP",
+                           f"a flat round trip changed cash by {changed:+.6f}; "
+                           f"fees should make it negative", angle="durability")
+        return Outcome("cash conservation", "PASS",
+                       f"flat round trip cost exactly the fees ({t.net:+.4f})",
+                       angle="durability")
+
+
+def d_equity_matches_cash_when_flat() -> Outcome:
+    with tempfile.TemporaryDirectory() as d:
+        cfg = _cfg()
+        broker = PaperBroker(cfg.costs, cfg.risk)
+        pf = Portfolio(cash=500.0)
+        now = utcnow()
+        broker.buy(pf, 80.0, 2.0, now, "t", stop=78.0)
+        broker.sell(pf, 85.0, now, "win")
+        pf.mark(85.0)
+        if abs(pf.equity - pf.cash) > 1e-9:
+            return Outcome("equity vs cash", "GAP",
+                           f"equity {pf.equity:.4f} != cash {pf.cash:.4f} when flat",
+                           angle="durability")
+        return Outcome("equity vs cash", "PASS",
+                       "flat portfolio equity equals cash exactly",
+                       angle="durability")
+
+
+def d_nan_price_rejected() -> Outcome:
+    """NaN must never reach sizing: NaN < x is False, so guards fail open."""
+    from .broker import BrokerError
+    from datetime import datetime, timezone
+    bad = 0
+    try:
+        Bar(ts=datetime.now(timezone.utc), open=1, high=float("nan"),
+            low=0.5, close=1, volume=1)
+        bad += 1
+    except ValueError:
+        pass
+    re = RiskEngine(_cfg().risk)
+    if re.size_entry(1000.0, float("nan"), 2.0, 0, utcnow()).allowed:
+        bad += 1
+    try:
+        PaperBroker(_cfg().costs, _cfg().risk).buy(
+            Portfolio(cash=100.0), float("nan"), 1.0, utcnow(), "x")
+        bad += 1
+    except (BrokerError, ValueError):
+        pass
+    if bad:
+        return Outcome("NaN price", "GAP",
+                       f"{bad} of 3 layers accepted a non-finite price",
+                       angle="durability")
+    return Outcome("NaN price", "PASS",
+                   "bar, risk engine and broker all reject non-finite numbers",
+                   angle="durability")
+
+
+def d_atomic_state_write() -> Outcome:
+    """State files must be replaced atomically, never truncated in place."""
+    src = (Path(runner.__file__).parent / "desk.py").read_text()
+    if ".tmp" in src and "replace(" in src:
+        return Outcome("atomic state write", "PASS",
+                       "state written to a temp file then renamed",
+                       angle="durability")
+    return Outcome("atomic state write", "GAP",
+                   "state is written in place: a crash mid-write truncates it",
+                   angle="durability")
+
+
+def d_ledger_verify_scales() -> Outcome:
+    import time as _t
+    with tempfile.TemporaryDirectory() as d:
+        led = Ledger(Path(d) / "l.jsonl")
+        t0 = _t.time()
+        for i in range(2000):
+            led.append("mark", {"i": i})
+        write_s = _t.time() - t0
+        t0 = _t.time()
+        ok, _ = Ledger(Path(d) / "l.jsonl").verify()
+        verify_s = _t.time() - t0
+    if not ok:
+        return Outcome("ledger scale", "GAP", "2000 appends broke the chain",
+                       angle="durability")
+    if verify_s > 5:
+        return Outcome("ledger scale", "INFO",
+                       f"verify of 2000 entries takes {verify_s:.1f}s — grows "
+                       f"linearly, worth watching", angle="durability")
+    return Outcome("ledger scale", "PASS",
+                   f"{2000} appends in {write_s:.1f}s, verify {verify_s:.2f}s",
+                   angle="durability")
+
+
+DURABILITY: list[Callable[[], Outcome]] = [
+    d_restart_preserves_position,
+    d_corrupt_desk_refuses,
+    d_corrupt_policy_fails_closed,
+    d_corrupt_account_is_flagged,
+    d_broker_without_balance_is_refused,
+    d_broker_balance_is_counted,
+    d_cash_conserved,
+    d_equity_matches_cash_when_flat,
+    d_nan_price_rejected,
+    d_atomic_state_write,
+    d_ledger_verify_scales,
+]
+
+
+def run_all(verbose: bool = True, angle: str = "all") -> list[Outcome]:
+    fns: list[Callable[[], Outcome]] = []
+    if angle in ("all", "behaviour"):
+        fns += SCENARIOS
+    if angle in ("all", "durability"):
+        fns += DURABILITY
     out: list[Outcome] = []
-    for fn in SCENARIOS:
+    for fn in fns:
         try:
             out.append(fn())
         except Exception as e:  # noqa: BLE001 - a broken scenario is a finding too

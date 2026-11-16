@@ -265,8 +265,9 @@ class PolicyStore:
         self.path = Path(path)
 
     def load(self, default: Optional[Policy] = None) -> Policy:
+        from .gatekeeper import RiskTier as _T
         if not self.path.exists():
-            return default or Policy()
+            return default or Policy(tier=_T.RESEARCH)
         try:
             d = json.loads(self.path.read_text())
             from .gatekeeper import RiskTier
@@ -280,7 +281,13 @@ class PolicyStore:
                 reasoning=str(d.get("reasoning", "")),
             )
         except (json.JSONDecodeError, OSError, ValueError, TypeError):
-            return default or Policy()
+            # Fail CLOSED. A corrupt policy file must not resurrect trading
+            # authority; the operator can re-select a tier in the console.
+            import sys as _sys
+            print(f"[policy] unreadable {self.path} — reverting to READ-ONLY "
+                  f"(research tier)", file=_sys.stderr, flush=True)
+            return Policy(tier=_T.RESEARCH,
+                          reasoning="policy file unreadable; failed closed")
 
     def save(self, policy: Policy) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

@@ -148,6 +148,14 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
     strategies = _read_json(data / "strategies.json", [])
     service = _read_json(data / "service.json", {})
     account = _read_json(root / cfg.ledger.state_path, {})
+    from .account import AccountError, resolve_account
+    try:
+        acct = resolve_account(root, cfg)
+    except AccountError as e:  # connected broker with no balance
+        acct = None
+        account_error = str(e)
+    else:
+        account_error = ""
 
     tier_int = int(policy_raw.get("tier", int(RiskTier.RESEARCH)))
     try:
@@ -180,7 +188,11 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
         "symbol": cfg.market.symbol,
         "timeframe": cfg.market.timeframe,
         "exchange": cfg.market.exchange,
-        "account_equity": account.get("equity"),
+        "account_equity": (acct.equity if acct else None),
+        "account": (acct.to_dict() if acct else {"equity": None,
+                                                 "source": "unavailable",
+                                                 "detail": account_error,
+                                                 "stale": True}),
         "policy": {
             "tier": int(tier),
             "tier_name": TIER_NAMES[tier],

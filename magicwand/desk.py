@@ -82,6 +82,10 @@ class DeskState:
     # Timestamp of the newest bar already counted against bars_held, so a 5-min
     # tick on a 1h timeframe does not age a position twelve times per bar.
     last_bar_ts: str = ""
+    # True when desk.json existed but could not be parsed. Trading is refused
+    # while this is set: a truncated file must never look like "no position and
+    # zero cash", which is how a balance disappears without anyone noticing.
+    corrupted: bool = False
     # `pot` is CASH, exactly like Portfolio.cash. The position is held beside
     # it. Equity = cash + position value at market, computed on demand.
 
@@ -109,8 +113,12 @@ class AgentDesk:
             return DeskState(pot=0.0)
         try:
             d = json.loads(self.path.read_text())
-        except (json.JSONDecodeError, OSError):
-            return DeskState(pot=0.0)
+        except (json.JSONDecodeError, OSError) as e:
+            import sys as _sys
+            print(f"[desk] desk.json is unreadable ({type(e).__name__}) — trading "
+                  f"is DISABLED until it is repaired or explicitly reset. The "
+                  f"file is left untouched as evidence.", file=_sys.stderr, flush=True)
+            return DeskState(pot=0.0, corrupted=True)
         st = DeskState(
             pot=float(d.get("pot", 0.0)),
             trades_today=int(d.get("trades_today", 0)),
@@ -148,6 +156,8 @@ class AgentDesk:
         return st
 
     def save(self) -> None:
+        if self.state.corrupted:
+            return          # preserve the damaged file as evidence
         self.path.parent.mkdir(parents=True, exist_ok=True)
         p = self.state.position
         body = {
@@ -239,6 +249,9 @@ class AgentDesk:
                 "price": price})
             return {"ok": False, "reason": msg}
 
+        if self.state.corrupted:
+            return refuse("desk state file is corrupt — refusing to trade until "
+                          "it is repaired or explicitly reset")
         if not self.dcfg.enabled:
             return refuse("desk is disabled")
         # --- the gatekeeper is the last word before any broker call ---

@@ -12,6 +12,7 @@ nothing here can move real money.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -67,6 +68,10 @@ class PaperBroker:
 
     # ---- execution ----
 
+    def _check_numbers(self, price: float, qty: float) -> None:
+        if not (math.isfinite(price) and math.isfinite(qty)):
+            raise BrokerError(f"non-finite order: price={price!r} qty={qty!r}")
+
     def buy(self, pf: Portfolio, quote: float, qty: float, ts: datetime,
             reason: str, kind: str = "entry",
             stop: Optional[float] = None, target: Optional[float] = None,
@@ -74,6 +79,7 @@ class PaperBroker:
             max_hold_bars: int = 0) -> Optional[Fill]:
         if qty <= 0:
             raise BrokerError("qty must be positive")
+        self._check_numbers(quote, qty)
         price = self._fill_price(Side.BUY, quote)
         notional = price * qty
         fee = self._fee(notional)

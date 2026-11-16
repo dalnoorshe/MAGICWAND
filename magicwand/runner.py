@@ -83,20 +83,20 @@ def _resolve_symbol(cfg: Config, root: Path) -> str:
     return cfg.market.symbol
 
 
-def _total_equity(cfg: Config, root: Path) -> float:
-    """Real account equity, falling back to the configured starting value.
+def _total_equity(cfg: Config, root: Path, broker=None) -> float:
+    """Account equity, from the best available source.
 
-    The desk is funded from this. Reading it from the live state file matters:
-    funding off `cfg.risk.equity` would size the desk for a $50 account even
-    when the paper account had grown (or shrunk) to something else.
+    Order: connected broker -> paper state file -> configured starting balance.
+    The desk is funded from this, so a live adapter reporting a real balance is
+    what makes the desk size itself for the real account.
     """
-    p = root / cfg.ledger.state_path
-    if p.exists():
-        try:
-            return float(json.loads(p.read_text()).get("equity", cfg.risk.equity))
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
-            pass
-    return float(cfg.risk.equity)
+    from .account import AccountError, resolve_account
+    try:
+        return resolve_account(root, cfg, broker=broker).equity
+    except AccountError:
+        # A connected broker that cannot report a balance must not be replaced
+        # by a guess; treat it as zero so nothing is sized at all.
+        return 0.0
 
 
 def _registry_path(root: Path) -> Path:

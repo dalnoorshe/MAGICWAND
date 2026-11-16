@@ -17,6 +17,7 @@ Rules enforced here (all hard, none overridable by a strategy):
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Optional
@@ -102,6 +103,10 @@ class RiskEngine:
                 False, 0.0,
                 f"max open positions reached ({open_positions}/{cfg.max_open_positions})",
             )
+        if not (math.isfinite(equity) and math.isfinite(price)
+                and math.isfinite(stop_distance)):
+            return RiskDecision(False, 0.0,
+                                "non-finite price/equity/stop; refusing to size")
         if price <= 0 or stop_distance <= 0:
             return RiskDecision(False, 0.0, "invalid price or stop distance; refusing to size")
 

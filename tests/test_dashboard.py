@@ -90,12 +90,22 @@ class TestTierAction(unittest.TestCase):
             self.assertEqual(loaded.tier, RiskTier.SCALED_DESK)
             self.assertAlmostEqual(loaded.risk_per_trade, 0.015)
 
-    def test_corrupt_policy_falls_back_safely(self):
+    def test_corrupt_policy_falls_back_SAFE(self):
+        """Fail CLOSED: a corrupt policy file must lose authority, not gain it.
+
+        It used to fall back to the dataclass default (paper_desk), so a
+        truncated file silently ENABLED trading. The safe answer is read-only.
+        """
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "p.json"
             p.write_text("{not json")
             loaded = PolicyStore(p).load()
-            self.assertEqual(loaded.tier, RiskTier.PAPER_DESK)  # the dataclass default
+            self.assertEqual(loaded.tier, RiskTier.RESEARCH)
+
+    def test_missing_policy_is_read_only_on_a_fresh_install(self):
+        with tempfile.TemporaryDirectory() as d:
+            loaded = PolicyStore(Path(d) / "absent.json").load()
+            self.assertEqual(loaded.tier, RiskTier.RESEARCH)
 
 
 class TestReflectionRules(unittest.TestCase):

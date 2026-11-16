@@ -113,7 +113,14 @@ class MarketSnapshot:
         n = self.sources.get("news")
         if n and n.ok:
             items = n.data.get("items", [])[:max_news]
-            lines.append(f"news ({n.data.get('count', 0)} recent headlines):")
+            uniq = n.data.get("distinct_stories")
+            if uniq is None:
+                lines.append(f"news ({n.data.get('count', 0)} recent headlines):")
+            else:
+                lines.append(
+                    f"news ({n.data.get('count', 0)} headlines, ~{uniq} distinct "
+                    f"stories — several feeds may carry the same story; count "
+                    f"STORIES as corroboration, not headlines):")
             for it in items:
                 lines.append(f"  - [{it.get('published')}] {it.get('title')} ({it.get('source')})")
         s = self.sources.get("social")
@@ -268,6 +275,42 @@ def _parse_date(s: str) -> Optional[datetime]:
     return None
 
 
+def _title_tokens(title: str) -> set[str]:
+    import re
+    t = re.sub(r"[^a-z0-9 ]", " ", (title or "").lower())
+    return {w for w in t.split() if len(w) > 3}
+
+
+def distinct_stories(items: list[dict], overlap: float = 0.5,
+                     min_shared: int = 2) -> int:
+    """Count STORIES, not headlines.
+
+    Four feeds republishing one piece is one source, not four. Two headlines are
+    the same story when one is largely CONTAINED in the other: syndication
+    usually adds or drops a word or two ("persist" vs "persistent"), which
+    Jaccard punishes because the union grows. Containment asks the right
+    question — is this the same event described in different words?
+
+    `min_shared` stops two unrelated headlines from merging just because both
+    say "bitcoin".
+    """
+    clusters: list[set[str]] = []
+    for it in items:
+        toks = _title_tokens(it.get("title", ""))
+        if not toks:
+            continue
+
+        def same_story(cluster: set[str]) -> bool:
+            shared = len(toks & cluster)
+            if shared < min_shared:
+                return False
+            return shared / max(1, min(len(toks), len(cluster))) >= overlap
+
+        if not any(same_story(c) for c in clusters):
+            clusters.append(toks)
+    return len(clusters)
+
+
 def fetch_news(hours: int = 24, feeds: Optional[dict] = None,
                per_feed: int = 8) -> Source:
     feeds = feeds or FEEDS
@@ -291,8 +334,12 @@ def fetch_news(hours: int = 24, feeds: Optional[dict] = None,
                 found.append(it)
         time.sleep(0.2)  # be polite to free feeds
     found.sort(key=lambda x: x["published"], reverse=True)
+    shown = found[:30]
     return Source(name="news", ok=bool(found), fetched_at=iso(utcnow()),
-                  data={"count": len(found), "items": found[:30], "errors": errors},
+                  data={"count": len(found),
+                        "distinct_stories": distinct_stories(shown),
+                        "items": shown,
+                        "errors": errors},
                   error="" if found else ("; ".join(errors) or "no recent headlines"))
 
 

@@ -488,16 +488,23 @@ function renderAgents(research) {
     return;
   }
   if (!agents.length) { box.innerHTML = '<div class="empty">no agent verdicts</div>'; return; }
-  box.innerHTML = agents.map(a => {
+  const declinedNote = declined.length
+    ? `<div class="dim" style="margin:2px 0 8px">vetoes declined (single source, confidence below 0.80): ${declined.map(esc).join(", ")}</div>`
+    : "";
+  box.innerHTML = declinedNote + agents.map(a => {
     if (a.error) {
       return `<div class="agent err"><div class="row"><b>${esc(a.agent)}</b>
         <span class="badge b-warn">degraded</span></div>
         <div class="thesis">${esc(a.error)}</div></div>`;
     }
     const conf = Number(a.confidence || 0);
+    const corr = Number(a.corroboration || 0);
+    const corrBadge = corr === 0 ? ""
+      : corr === 1 ? '<span class="badge b-warn" title="one independent source — a single-source veto needs 0.80 confidence">1 source</span>'
+      : `<span class="badge b-dim" title="independent sources backing this">${corr} sources</span>`;
     return `<div class="agent ${esc(a.stance)}">
       <div class="row"><b>${esc(a.agent)}</b>
-        <span><span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
+        <span>${corrBadge}<span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
         <span class="dim mono"> conf ${conf.toFixed(2)} · ev ${Number(a.evidence_score||0).toFixed(2)}</span></span></div>
       <div class="thesis">${esc(a.thesis || "")}</div>
       <div class="bar"><i style="width:${Math.round(conf*100)}%"></i></div>

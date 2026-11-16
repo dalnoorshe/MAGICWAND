@@ -698,3 +698,89 @@ class TestModeSwitching(unittest.TestCase):
             self.assertIsNone(captured.get("fake"),
                               "a real key must not select the offline stand-in")
             self.assertTrue(captured.get("available"))
+
+
+class TestCorroboration(unittest.TestCase):
+    """One headline is one source, no matter how many feeds reprinted it.
+
+    The operator's question: if a reader rests on a single page, can it veto?
+    Now it must be much more confident — and a single-source veto that is
+    declined is reported rather than silently dropped.
+    """
+
+    def _v(self, conf, corr, ev=-0.5, stance="veto"):
+        return AgentVerdict(agent="news", stance=stance, confidence=conf,
+                            evidence_score=ev, corroboration=corr)
+
+    def test_single_source_low_confidence_is_declined(self):
+        rep = synthesize([self._v(0.62, 1)], "SOL-USD", "t")
+        self.assertFalse(rep.is_veto)
+        self.assertEqual(rep.single_source, ["news"])
+
+    def test_multi_source_same_confidence_is_accepted(self):
+        rep = synthesize([self._v(0.62, 3)], "SOL-USD", "t")
+        self.assertTrue(rep.is_veto)
+        self.assertEqual(rep.single_source, [])
+
+    def test_single_source_needs_eighty_percent(self):
+        self.assertTrue(synthesize([self._v(0.80, 1)], "SOL-USD", "t").is_veto)
+        self.assertFalse(synthesize([self._v(0.79, 1)], "SOL-USD", "t").is_veto)
+
+    def test_zero_corroboration_is_treated_as_single_source(self):
+        rep = synthesize([self._v(0.62, 0)], "SOL-USD", "t")
+        self.assertFalse(rep.is_veto)
+
+    def test_declined_veto_is_in_the_summary(self):
+        rep = synthesize([self._v(0.62, 1)], "SOL-USD", "t")
+        self.assertIn("single-source veto declined", rep.summary)
+
+    def test_prompt_asks_for_corroboration(self):
+        from magicwand.agents import _BASE_SYSTEM
+        self.assertIn("corroboration", _BASE_SYSTEM)
+        self.assertIn("ONE source", _BASE_SYSTEM)
+
+    def test_parser_reads_corroboration(self):
+        v = parse_verdict("news", json.dumps({
+            "stance": "veto", "confidence": 0.7, "evidence_score": -0.4,
+            "thesis": "t", "corroboration": 4, "claims": [], "warnings": []}))
+        self.assertEqual(v.corroboration, 4)
+
+    def test_parser_clamps_absurd_corroboration(self):
+        v = parse_verdict("news", json.dumps({
+            "stance": "neutral", "confidence": 0.5, "evidence_score": 0,
+            "thesis": "t", "corroboration": 999, "claims": []}))
+        self.assertLessEqual(v.corroboration, 10)
+
+
+class TestDistinctStories(unittest.TestCase):
+    """Syndication must not inflate corroboration."""
+
+    def test_same_story_from_four_feeds_is_one(self):
+        from magicwand.research import distinct_stories
+        items = [{"title": "Bitcoin drops below 60000 as ETF outflows persist"},
+                 {"title": "Bitcoin drops below 60000 as ETF outflows continue"},
+                 {"title": "Bitcoin falls below 60000 amid persistent ETF outflows"}]
+        self.assertEqual(distinct_stories(items), 1)
+
+    def test_different_stories_count_separately(self):
+        from magicwand.research import distinct_stories
+        items = [{"title": "Solana launches tokenization partnership"},
+                 {"title": "Nvidia earnings disappoint chip investors"},
+                 {"title": "Regulator opens review of crypto funds"}]
+        self.assertEqual(distinct_stories(items), 3)
+
+    def test_empty_is_zero(self):
+        from magicwand.research import distinct_stories
+        self.assertEqual(distinct_stories([]), 0)
+
+    def test_snapshot_prompt_warns_about_syndication(self):
+        from magicwand.research import MarketSnapshot, Source
+        from magicwand.common import iso, utcnow
+        ts = iso(utcnow())
+        s = MarketSnapshot(ts=ts, symbol="SOL-USD")
+        s.sources["news"] = Source("news", True, ts, {
+            "count": 6, "distinct_stories": 2,
+            "items": [{"title": "A story", "published": ts, "source": "x", "link": ""}]})
+        text = s.to_prompt()
+        self.assertIn("2 distinct", text)
+        self.assertIn("count STORIES", text)

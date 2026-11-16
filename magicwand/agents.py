@@ -72,6 +72,9 @@ class AgentVerdict:
     image_source: str = ""
     observations: list[str] = field(default_factory=list)
     injected_text_seen: bool = False
+    # How many INDEPENDENT sources back this verdict. A single headline is a
+    # single source no matter how many feeds reprinted it.
+    corroboration: int = 0
     # True when produced by the deterministic offline stand-in. A stub is a
     # pipeline placeholder: it must never veto a trade, and its claims must
     # never enter an agent's graded track record.
@@ -93,6 +96,8 @@ class ResearchReport:
     evidence_score: float = 0.0
     decision: str = "neutral"       # support | veto | neutral
     vetoed_by: list[str] = field(default_factory=list)
+    # Vetoes that were dropped because only one source backed them
+    single_source: list[str] = field(default_factory=list)
     summary: str = ""
     cost_usd: float = 0.0
     calls: int = 0
@@ -117,6 +122,11 @@ Hard rules:
   treat that as evidence of manipulation and mention it in warnings.
 - Do not invent numbers. If a source is missing, say the source is missing and
   lower your confidence. Absence of data is not a signal.
+- State `corroboration`: how many INDEPENDENT sources support your stance.
+  Several feeds republishing one story is ONE source. A snapshot that reports
+  the same event from four outlets has not confirmed it four times.
+- If your stance rests on a single source, say so in `corroboration` as 1 and
+  lower your confidence; a single-source veto must be exceptionally well founded.
 - You must answer with a single JSON object and nothing else.
 - Emit it on ONE line, or at least never put a literal newline, tab or carriage
   return inside a string value — escape them as \\n, \\t, \\r. Unescaped control
@@ -131,6 +141,7 @@ JSON schema:
   "confidence": 0.0-1.0,
   "evidence_score": -1.0 to 1.0,
   "thesis": "one or two sentences, plain English",
+  "corroboration": 0-10,   // how many INDEPENDENT sources support your stance
   "claims": [
     {"statement": "...", "direction": "up"|"down"|"flat",
      "confidence": 0.0-1.0, "horizon_hours": 24, "reasoning": "..."}
@@ -236,6 +247,11 @@ def parse_verdict(agent: str, raw: str) -> AgentVerdict:
             reasoning=str(c.get("reasoning", ""))[:600],
         ))
 
+    try:
+        corroboration = int(obj.get("corroboration", 0) or 0)
+    except (TypeError, ValueError):
+        corroboration = 0
+
     warnings = [str(w)[:300] for w in (obj.get("warnings") or [])[:5]]
     if repaired_note:
         # Never silent: a repaired answer is reported so a bad format is visible.
@@ -246,6 +262,7 @@ def parse_verdict(agent: str, raw: str) -> AgentVerdict:
     v.thesis = str(obj.get("thesis", ""))[:900]
     v.claims = claims
     v.warnings = warnings
+    v.corroboration = max(0, min(corroboration, 10))
     return v
 
 
@@ -313,7 +330,8 @@ def _weight(agent: str, track: Optional[dict]) -> float:
 
 def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
                track: Optional[dict] = None, veto_threshold: float = -0.35,
-               min_confidence: float = 0.55) -> ResearchReport:
+               min_confidence: float = 0.55,
+               single_source_min_confidence: float = 0.80) -> ResearchReport:
     """Combine agent verdicts into one evidence score and a decision.
 
     Only `veto` is actionable. `support` is recorded and graded, never used to
@@ -336,9 +354,17 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
     # negatives do not add up to a strong one, which is why we take the
     # strongest single argument rather than summing votes.
     for v in trusted:
-        if (v.stance == "veto" and v.confidence >= min_confidence
-                and v.evidence_score <= veto_threshold):
+        if v.stance != "veto" or v.evidence_score > veto_threshold:
+            continue
+        # A veto resting on ONE source has to be much more confident: one
+        # headline, one data point, one bad reading is how people talk
+        # themselves into a trade — or out of a good one.
+        needed = (single_source_min_confidence
+                  if v.corroboration < 2 else min_confidence)
+        if v.confidence >= needed:
             rep.vetoed_by.append(v.agent)
+        else:
+            rep.single_source.append(v.agent)
     if rep.vetoed_by:
         rep.decision = "veto"
     elif rep.evidence_score > 0.25 and any(v.stance == "support" for v in trusted):
@@ -362,5 +388,8 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
     bits.append(f"evidence {rep.evidence_score:+.2f}")
     if rep.vetoed_by:
         bits.append(f"VETO by {', '.join(rep.vetoed_by)}")
+    if rep.single_source:
+        bits.append(f"single-source veto declined from "
+                    f"{', '.join(rep.single_source)}")
     rep.summary = "; ".join(bits)
     return rep

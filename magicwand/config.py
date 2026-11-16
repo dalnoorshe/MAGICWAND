@@ -18,6 +18,7 @@ class MarketConfig:
     symbol: str = "SOL-USD"      # SOL is affordable at small account sizes
     timeframe: str = "1h"        # 1m 5m 15m 1h 6h 1d
     candles: int = 300           # coinbase allows 300 per request
+    max_data_age_bars: float = 3.0   # refuse to trade data older than this many bars
 
 
 @dataclass

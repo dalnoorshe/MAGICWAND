@@ -225,7 +225,12 @@ def main(argv: list[str] | None = None) -> int:
     print()
     print(f"  {BOLD}{url}{OFF}")
     if autostart:
-        print(f"  {DIM}autopilot: every {interval}s, unattended{OFF}")
+        daily = 0.004 * 86400 / max(interval, 1)
+        print(f"  {DIM}autopilot: every {interval}s, unattended — "
+              f"research ≈ ${daily:.2f}/day at this rate{OFF}")
+        if daily > 2.0:
+            print(_warn(f"that is ~${daily:.0f}/day of API spend; "
+                        f"consider --interval 900"))
     else:
         print(f"  {DIM}autopilot: idle (press Start in the console){OFF}")
     print(f"  {DIM}Ctrl-C to stop{OFF}\n")

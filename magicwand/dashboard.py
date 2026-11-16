@@ -50,6 +50,38 @@ from .markets import symbols as _market_symbols  # noqa: E402
 _SUPPORTED_SYMBOLS = tuple(_market_symbols())
 
 
+def _affordability_warning(root: Path, cfg: Config, symbol: str) -> str:
+    """Warn when a market physically cannot fit the desk's per-trade budget.
+
+    A $3,875 asset on a $50 account gives a $0.50 position against a $5 venue
+    minimum: the gatekeeper refuses every order, which looks like a broken system
+    rather than an account that is too small for the market.
+    """
+    try:
+        from .markets import get as _mget
+        m = _mget(symbol)
+        if not m:
+            return ""
+        equity = float(cfg.risk.equity)
+        pot = equity * 0.10                       # desk tier ceiling
+        budget = pot * 0.10                       # per-trade share of the pot
+        from .markets import MARKETS
+        cheapest = min(x.min_notional for x in MARKETS.values())
+        if budget < cheapest:
+            return (f"At ${equity:.0f} equity the desk allows ${budget:.2f} per "
+                    f"trade, but the smallest venue minimum is ${cheapest:.2f}. "
+                    f"NO market can be traded at this account size — raise "
+                    f"risk.equity in the config or accept paper-only research.")
+        if budget < m.min_notional:
+            return (f"{symbol} needs at least ${m.min_notional:.2f} per trade, but "
+                    f"your desk allows ${budget:.2f} (10% of a ${pot:.2f} pot). "
+                    f"No trade will ever be placed on this market at this "
+                    f"account size.")
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
 def _market_on_exchange(symbol: str, exchange: str) -> bool:
     from .markets import get as _mget
     m = _mget(symbol)
@@ -580,7 +612,9 @@ class Handler(BaseHTTPRequestHandler):
             print(f"[settings {utcnow():%H:%M:%S}] market set to {sym} "
                   f"(social now reads r/{__import__('magicwand.research', fromlist=['x']).subreddit_for(sym)})",
                   flush=True)
-            self._json({"ok": True, "settings": st.public_dict(), "symbol": sym})
+            warn = _affordability_warning(self.root, self.cfg, sym)
+            self._json({"ok": True, "settings": st.public_dict(), "symbol": sym,
+                        "warning": warn})
             return
 
         key = b.get("key")

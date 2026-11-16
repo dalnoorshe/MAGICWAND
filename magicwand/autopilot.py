@@ -64,9 +64,20 @@ class Autopilot:
 
     # ---- status ----
 
+    # Measured cost of one research cycle: four readers + chart + occasional
+    # proposal. Used only to warn; the real spend is tracked by the LLM client.
+    COST_PER_TICK_USD = 0.004
+
+    def estimated_daily_cost(self) -> float:
+        if not self.state.interval:
+            return 0.0
+        return self.COST_PER_TICK_USD * 86400 / self.state.interval
+
     def status(self) -> dict:
         d = asdict(self.state)
         d["next_in_seconds"] = self._seconds_to_next()
+        d["cost_per_tick_usd"] = self.COST_PER_TICK_USD
+        d["estimated_daily_cost_usd"] = round(self.estimated_daily_cost(), 3)
         return d
 
     def _seconds_to_next(self) -> Optional[int]:

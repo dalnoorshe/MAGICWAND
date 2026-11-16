@@ -141,7 +141,7 @@ def _manage_desk(cfg: Config, desk: AgentDesk, bars: list[Bar],
     if pos is None:
         return
     last = bars[-1]
-    pos.bars_held += 1
+    desk.advance_bars(last.ts)
     hit = check_exit(pos, last)
     if hit is not None:
         kind = "stop" if hit.reason is ExitReason.STOP else "target"
@@ -255,6 +255,20 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
     atr = a[-1] or price * 0.01
     rep = TickReport(ts=iso(bars[-1].ts), symbol=symbol, price=price)
 
+    # Staleness guard: an old newest-bar means the feed stopped, not that the
+    # market is quiet. Research may still run (it is informative), but no new
+    # position is opened on a price that may no longer exist.
+    # Synthetic bars carry fixed 2024 timestamps (they are a deterministic
+    # fixture), so staleness only applies to real feeds.
+    stale = (cfg.market.exchange != "synthetic"
+             and data_mod.is_stale(bars, cfg.market.timeframe,
+                                   cfg.market.max_data_age_bars))
+    if stale:
+        age_h = data_mod.age_seconds(bars) / 3600.0
+        rep.notes.append(
+            f"DATA STALE: newest closed bar is {age_h:.1f}h old "
+            f"(limit {cfg.market.max_data_age_bars:g} bars); no new positions")
+
     # 2. grade matured agent claims
     graded = research_loop.grade_agent_claims(ledger, symbol, price)
     if graded:
@@ -307,6 +321,14 @@ def tick(cfg: Config, client: DeepSeekClient, dcfg: DeskConfig,
 
     # 6. trade ONLY a validated strategy, and only if research did not veto
     rep.desk_equity = desk.equity(price) if dcfg.enabled else 0.0
+    if stale:
+        ledger.append("stale_data", {
+            "symbol": symbol,
+            "bar_age_hours": round(data_mod.age_seconds(bars) / 3600.0, 3),
+            "limit_bars": cfg.market.max_data_age_bars,
+            "action": "no new positions",
+        })
+        return rep
 
     # Record a mark every tick. Without this the equity chart has no series at
     # all, because only the manual `step` path used to write marks.

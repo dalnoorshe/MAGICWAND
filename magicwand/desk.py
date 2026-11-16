@@ -79,6 +79,9 @@ class DeskState:
     # amount over account equity — not cash-after-a-trade over equity.
     funded_amount: float = 0.0
     funded_against_equity: float = 0.0
+    # Timestamp of the newest bar already counted against bars_held, so a 5-min
+    # tick on a 1h timeframe does not age a position twelve times per bar.
+    last_bar_ts: str = ""
     # `pot` is CASH, exactly like Portfolio.cash. The position is held beside
     # it. Equity = cash + position value at market, computed on demand.
 
@@ -117,6 +120,7 @@ class AgentDesk:
             opened_by=str(d.get("opened_by", "")),
             funded_amount=float(d.get("funded_amount", 0.0)),
             funded_against_equity=float(d.get("funded_against_equity", 0.0)),
+            last_bar_ts=str(d.get("last_bar_ts", "")),
         )
         p = d.get("position")
         if p:
@@ -155,6 +159,7 @@ class AgentDesk:
             "opened_by": self.state.opened_by,
             "funded_amount": round(self.state.funded_amount, 8),
             "funded_against_equity": round(self.state.funded_against_equity, 8),
+            "last_bar_ts": self.state.last_bar_ts,
             "position": None if p is None else {
                 "symbol": p.symbol, "side": p.side.value, "qty": p.qty,
                 "entry_price": p.entry_price, "entry_ts": iso(p.entry_ts),
@@ -346,6 +351,23 @@ class AgentDesk:
         self.save()
         self.review()
         return trade
+
+    def advance_bars(self, bar_ts) -> bool:
+        """Count one bar against the open position, at most once per bar.
+
+        `max_hold_bars` is expressed in BARS. Ticks are not bars: a 5-minute
+        autopilot on a 1h timeframe ticks twelve times per bar, which made a
+        72-bar time stop fire after six hours instead of three days.
+        """
+        from .common import iso as _iso
+        key = _iso(bar_ts) if not isinstance(bar_ts, str) else bar_ts
+        if key == self.state.last_bar_ts:
+            return False
+        self.state.last_bar_ts = key
+        if self.state.position is not None:
+            self.state.position.bars_held += 1
+        self.save()
+        return True
 
     def equity(self, price: float) -> float:
         """Desk equity = cash held + position marked at market."""

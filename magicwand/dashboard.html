@@ -927,6 +927,8 @@ function renderAutopilot(a) {
   body.innerHTML = `
     <table>
       <tr><td class="dim">ticks</td><td class="num">${a.ticks ?? 0}</td></tr>
+      <tr><td class="dim">est. cost/day</td>
+        <td class="num ${(a.estimated_daily_cost_usd || 0) > 2 ? "bad" : ""}">$${Number(a.estimated_daily_cost_usd || 0).toFixed(2)}</td></tr>
       <tr><td class="dim">errors</td><td class="num ${a.errors ? "bad" : ""}">${a.errors ?? 0}</td></tr>
       <tr><td class="dim">interval</td><td class="num">${a.interval ?? "—"}s</td></tr>
       <tr><td class="dim">next in</td><td class="num">${running ? next : "—"}</td></tr>

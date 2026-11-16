@@ -25,6 +25,7 @@ from . import propose as propose_mod
 from . import research_loop
 from . import runner
 from .config import Config
+from . import audit as audit_mod
 from . import integrations as integrations_mod
 from . import service as service_mod
 from . import storage as storage_mod
@@ -385,6 +386,29 @@ def cmd_storage(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_audit(cfg: Config, args) -> int:
+    """Adversarial self-audit: run the scenarios and show what breaks."""
+    results = audit_mod.run_all()
+    order = {"GAP": 0, "INFO": 1, "PASS": 2}
+    results.sort(key=lambda r: order.get(r.verdict, 3))
+    gaps = [r for r in results if r.verdict == "GAP"]
+    print()
+    print("  MAGICWAND SELF-AUDIT")
+    print("  " + "-" * 76)
+    for r in results:
+        mark = {"GAP": "GAP ", "INFO": "info", "PASS": "pass"}[r.verdict]
+        print(f"  [{mark}] {r.name}")
+        print(f"         {r.detail}")
+        if r.fix and args.verbose:
+            print(f"         fix: {r.fix}")
+        print()
+    print(f"  {len(gaps)} gap(s), "
+          f"{sum(1 for r in results if r.verdict == 'INFO')} note(s), "
+          f"{sum(1 for r in results if r.verdict == 'PASS')} pass(es)")
+    print()
+    return 0
+
+
 def cmd_keys(cfg: Config, args) -> int:
     """What do I need to connect? Answered from the code, not from memory."""
     items = integrations_mod.collect(".")
@@ -473,6 +497,10 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--max-calls", type=int, default=400)
     rs.add_argument("--max-cost", type=float, default=2.0)
     rs.set_defaults(fn=cmd_research)
+
+    au = sub.add_parser("audit", help="adversarial scenario self-audit")
+    au.add_argument("--verbose", action="store_true")
+    au.set_defaults(fn=cmd_audit)
 
     k = sub.add_parser("keys", help="what API keys are needed, and what is connected")
     k.add_argument("--verbose", action="store_true")

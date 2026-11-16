@@ -806,6 +806,32 @@ So the honest limit is "we ran out of untried ideas", not "we ran out of
 budget". The proposer is told what it already tried, so it must go somewhere
 new.
 
+## Self-audit: what breaks when you push on it
+
+```bash
+python3 wand.py audit --verbose    # 16 adversarial scenarios against the real code
+```
+
+It runs each scenario in a throwaway directory and reports what actually
+happened. The first run found **five gaps**, four of which were real:
+
+| Scenario | Found | Status |
+|---|---|---|
+| **Stale data** | a dead feed and a quiet market look identical — nothing compared bar age to now | **fixed**: refuses new positions when the newest bar is older than 3 bars |
+| **Time stop units** | `bars_held` incremented per *tick*; 5-minute ticks on a 1h chart made a 72-bar stop fire after ~6 hours instead of ~3 days | **fixed**: counts bars, at most once per bar |
+| **Tick cost** | a 60s autopilot is ~**$5.76/day** of research and nothing said so | **fixed**: daily estimate shown, red above $2/day |
+| **Account too small** | at $50 the desk allows $0.50/trade against a $5 minimum — *no* market is tradeable | **documented**: arithmetic, not a bug |
+| Desk trusts its caller | the gate is enforced by the runner, not the desk | noted: one layer, not two |
+
+The rest passed: feed outage, all-readers-degraded, prompt injection, ledger
+tamper, concurrent writers, symbol change with a position, kill switch, daily
+loss halt, and the new corroboration rules.
+
+**The honest finding worth repeating:** at the default $50 account, `max_hold`
+and the gate are irrelevant because no trade can clear the venue minimum. That
+needs roughly $500 of equity before the paper desk can place a $5 order. It is a
+research rig at $50, exactly as the first day concluded.
+
 ## What it found on day one
 
 Run against 300 hourly SOL-USD candles (2026-10-30 → 2026-11-11):

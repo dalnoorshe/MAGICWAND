@@ -227,6 +227,27 @@ def fetch(exchange: str, symbol: str, timeframe: str = "1h",
     return bars
 
 
+def timeframe_seconds(timeframe: str) -> int:
+    return _GRANULARITY.get(timeframe, 3600)
+
+
+def age_seconds(bars: list[Bar], now=None) -> float:
+    """How old the newest closed bar is, in seconds."""
+    if not bars:
+        return float("inf")
+    now = now or datetime.now(timezone.utc)
+    return max(0.0, (now - bars[-1].ts).total_seconds())
+
+
+def is_stale(bars: list[Bar], timeframe: str, max_age_bars: float) -> bool:
+    """True when the feed has stopped advancing.
+
+    A halted market, a dead endpoint, or a cached file all look like a quiet
+    market. Trading them means trading a price that no longer exists.
+    """
+    return age_seconds(bars) > timeframe_seconds(timeframe) * float(max_age_bars)
+
+
 def fingerprint(bars: list[Bar]) -> str:
     """Stable hash of a dataset, so a result can be tied to exact data."""
     h = hashlib.sha256()

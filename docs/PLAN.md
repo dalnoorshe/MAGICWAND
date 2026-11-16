@@ -38,6 +38,35 @@ invisible before.
 
 ---
 
+## 2b. Tools for the voting agents (search + fetch)
+
+**Status:** half built. The **chat** now has web tools (search + fetch, cited,
+budgeted, untrusted-fenced). The four readers and the chart reader do **not** —
+they still see only the snapshot.
+
+**Why not yet, and what I think the right shape is.** Giving every reader a tool
+loop inside every tick would: cost money every 5 minutes, add tens of seconds of
+latency per cycle, make the same snapshot produce different research on different
+runs, and multiply the prompt-injection surface by the number of pages fetched.
+It would also make "why did it veto?" much harder to answer.
+
+The shape that keeps the good parts:
+
+| Tier | What it has | When it runs |
+|---|---|---|
+| fast readers | the snapshot only | every tick, as now |
+| **deep researcher** | search + fetch, max ~5 calls | scheduled (hourly), or when the fast readers disagree |
+
+The deep researcher would return the same verdict schema **plus citations**, so
+its claims grade exactly like everyone else's and the ledger can show what it
+read. It stays **veto-only** — tools never grant trading authority.
+
+**Trigger:** the fast readers are producing verdicts consistently (no DEGRADED
+readers for a week) and the operator wants deeper research than a fixed snapshot
+allows.
+
+---
+
 ## 3. Multi-market, simultaneously
 
 **Status:** not built. One market per instance.

@@ -134,9 +134,12 @@ class TestNoMidStreamWipe(unittest.TestCase):
         self.assertIn('!chatBusy', html)
 
     def test_busy_flag_is_set_and_cleared(self):
+        """Bound the function by its neighbours, not by a character count —
+        the fixed-length slice broke as soon as the function grew a branch."""
         html = self._html()
-        idx = html.index("async function sendChat() {")
-        body = html[idx: idx + 2600]
+        start = html.index("async function sendChat() {")
+        end = html.index("function openChat() {", start)
+        body = html[start:end]
         self.assertIn("chatBusy = true", body)
         self.assertIn("chatBusy = false", body)
 

@@ -201,3 +201,5 @@
 [autopilot 14:47:23] autopilot started
 [autopilot 05:16:55] autopilot started
 [autopilot 05:17:46] tick 1: graded 383 agent claim(s) | research: 5/5 readers reported; evidence -0.35; VETO by derivatives, news, onchain | strategy 'sol_deep_discount_dip_buy' rejected: 
+[autopilot 05:33:21] tick 2: research: 5/5 readers reported; evidence -0.40; VETO by derivatives, news, onchain | strategy 'sol_slow_grind_reversion' rejected: REJECTED: not profitable at r
+[autopilot 05:48:52] tick 3: research: 5/5 readers reported; evidence -0.37; VETO by derivatives, news, onchain | strategy 'sol_fast_sma_squeeze_trend' rejected: REJECTED: not profitable at

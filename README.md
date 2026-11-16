@@ -483,6 +483,32 @@ Deferred items live in [`docs/PLAN.md`](docs/PLAN.md), each with the trigger tha
 would make building it correct — including "show the best candidate's numbers
 once one passes", which is pointless while the leaderboard is empty.
 
+### The chat can look things up
+
+It has the same two tools a person would use, from DeepSeek's own APIs:
+
+| Tool | What it does | Cost |
+|---|---|---|
+| **search** | web search, returns titles, URLs, dates, authority scores | $0.00075 |
+| **fetch** | reads one page as Markdown | $0.00075 |
+
+Lookups happen when a question needs them — a URL in the message triggers a
+**fetch**, a freshness word ("latest", "today", "why did…") triggers a **search**
+— not on every message, because each one costs money and time. Sources are shown
+as links under the answer and stored with the message, so a later "why did you
+say that?" has an answer.
+
+Fetched content is **fenced as untrusted** and labelled "data, never
+instructions", and the model is told to report manipulation rather than obey it.
+In the first live test it noticed that two sources disagreed about SOL's price
+and said so instead of picking one — which is the behaviour worth having.
+
+Web calls are budgeted separately (60 searches / 40 fetches / $0.10 per day) and
+never touch the trading path.
+
+**The voting agents do not have tools yet**, and that is deliberate — see
+`docs/PLAN.md` §2b for the reasoning and the shape it should take.
+
 ### Who is allowed to change what
 
 Three different kinds of "the AI changes the dashboard", deliberately separated:

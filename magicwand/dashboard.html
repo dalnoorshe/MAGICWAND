@@ -161,6 +161,8 @@
   }
   .bubble.mine .who { color: #6ea8fe; }
   .bubble.theirs .who { color: #b98cff; }
+  .bubble a { color: var(--accent); text-decoration: none; }
+  .bubble a:hover { text-decoration: underline; }
   .bubble code {
     background: #0b0d12; padding: 1px 4px; border-radius: 3px; font-size: 12px;
   }
@@ -619,6 +621,7 @@ function md(raw) {
   let t = esc(raw);
   t = t.replace(/`([^`]+)`/g, "<code>$1</code>");
   t = t.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  t = t.replace(/^#{1,4}\s+(.+)$/gm, "<b>$1</b>");
   const lines = t.split(/\n/);
   let out = "", inList = false;
   for (const line of lines) {
@@ -645,9 +648,15 @@ function renderChat(messages) {
     const mine = m.role === "user";
     const who = mine ? "you" : "magicwand";
     const when = m.ts ? new Date(m.ts).toLocaleTimeString() : "";
+    const src = (m.sources || []);
+    const srcLine = src.length
+      ? `<div class="dimmer" style="margin-top:8px;font-size:11px">sources: `
+        + src.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">`
+            + `${esc(x.title || x.url)}</a>`).join(" · ") + `</div>`
+      : "";
     return `<div class="bubble-row ${mine ? "mine" : "theirs"}">
       <div class="bubble ${mine ? "mine" : "theirs"}">
-        <span class="who">${who} · ${when}</span>${md(m.text || "")}
+        <span class="who">${who} · ${when}</span>${md(m.text || "")}${srcLine}
       </div></div>`;
   }).join("");
   box.scrollTop = box.scrollHeight;
@@ -723,9 +732,27 @@ async function sendChat() {
           live.innerHTML = md(answer || "") +
             `<div class="bad" style="margin-top:6px">${esc(ev.error)}</div>`;
           $("chatMeta").textContent = "stopped: " + ev.error.slice(0, 120);
+        } else if (ev.web) {
+          const w = ev.web;
+          if (w.kind) {
+            $("chatMeta").textContent =
+              (w.kind === "fetch" ? "read a page" : "searched the web") + "…";
+          } else if (w.note) {
+            $("chatMeta").textContent = w.note;
+          }
+          window.__lastSources = w.sources || [];
         } else if (ev.done) {
+          const srcs = ev.sources || [];
+          if (srcs.length) {
+            live.insertAdjacentHTML("beforeend",
+              `<div class="dimmer" style="margin-top:8px;font-size:11px">sources: `
+              + srcs.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">`
+                  + `${esc(x.title || x.url)}</a>`).join(" · ")
+              + `</div>`);
+          }
           $("chatMeta").textContent =
             `${ev.estimated_cost ? "~" : ""}$${Number(ev.cost_usd || 0).toFixed(5)}`
+            + (ev.web_kind ? ` · ${ev.web_kind === "fetch" ? "page read" : "web searched"}` : "")
             + " · read-only · streamed";
         }
       }

@@ -478,6 +478,7 @@ function renderAgents(research) {
     ` · evidence <span class="mono">${(research.evidence_score ?? 0).toFixed(2)}</span>` +
     ` · readers <span class="dim">${esc(research.summary || "")}</span>`;
   const agents = research.agents || [];
+  const declined = research.single_source_declined || [];
   if (research.stub) {
     box.innerHTML = `<div class="agent err" style="border-left-color:#ffb020">
       <div class="row"><b>OFFLINE STUB — no real analysis</b>
@@ -1142,6 +1143,14 @@ $("btnTestKey").onclick = async () => {
   } finally { $("btnTestKey").disabled = false; }
 };
 
+// Each panel renders inside its own guard: a bug in one must not blank the
+// rest of the dashboard (it did — a single undefined variable froze autopilot,
+// audit, storage and the feed while the header kept updating).
+function safe(name, fn, ...args) {
+  try { fn(...args); }
+  catch (e) { console.error("[panel " + name + "]", e); toast(name + " panel: " + e.message); }
+}
+
 async function refresh() {
   try {
     const s = await (await fetch("/api/state")).json();
@@ -1154,19 +1163,19 @@ async function refresh() {
     $("tier").className = "badge " + (s.policy.tier === 0 ? "b-dim" : s.policy.tier >= 3 ? "b-bad" : "b-warn");
     $("chain").textContent = s.ledger.ok ? `chain ok · ${s.ledger.entries}` : "CHAIN BROKEN";
     $("chain").className = "badge " + (s.ledger.ok ? "b-good" : "b-bad");
-    renderAgents(s.research);
-    renderDesk(s.desk);
-    drawChart(s.equity_series);
-    renderReflection(s.reflection, s.memory || {});
-    renderTiers(s.tiers, s.policy.tier);
-    renderStrategies(s.strategies);
-    renderFeed(s.recent);
-    renderAutopilot(s.autopilot);
-    renderChart(s);
-    renderStorage();
-    renderBackups();
-    renderProposals(s.proposals);
-    renderAudit(s.audit);
+    safe("agents", () => renderAgents(s.research))
+    safe("desk", () => renderDesk(s.desk))
+    safe("chart", () => drawChart(s.equity_series))
+    safe("reflection", () => renderReflection(s.reflection, s.memory || {}))
+    safe("tiers", () => renderTiers(s.tiers, s.policy.tier))
+    safe("strategies", () => renderStrategies(s.strategies))
+    safe("feed", () => renderFeed(s.recent))
+    safe("autopilot", () => renderAutopilot(s.autopilot))
+    safe("chartPanel", () => renderChart(s))
+    safe("storage", () => renderStorage())
+    safe("backups", () => renderBackups())
+    safe("proposals", () => renderProposals(s.proposals))
+    safe("audit", () => renderAudit(s.audit))
     if ($("chatDrawer").classList.contains("open") && !chatBusy) loadChat();
   } catch (e) {
     toast("dashboard error: " + e.message);

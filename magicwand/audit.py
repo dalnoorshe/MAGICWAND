@@ -678,9 +678,16 @@ def run_all(verbose: bool = True, angle: str = "all") -> list[Outcome]:
     if angle in ("all", "durability"):
         fns += DURABILITY
     out: list[Outcome] = []
+    import contextlib
+    import io
+    # Scenarios deliberately corrupt state files, which makes the loaders warn
+    # on stderr. That is correct, but it must not look alarming in the operator's
+    # startup output, so the noise is captured here.
+    quiet = io.StringIO()
     for fn in fns:
         try:
-            out.append(fn())
+            with contextlib.redirect_stderr(quiet):
+                out.append(fn())
         except Exception as e:  # noqa: BLE001 - a broken scenario is a finding too
             out.append(Outcome(fn.__name__, "GAP",
                                f"scenario crashed: {type(e).__name__}: {e}"))

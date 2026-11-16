@@ -1,0 +1,186 @@
+"""Execute the console's JavaScript against a stub DOM.
+
+`node --check` only validates syntax; it cannot see an undefined variable. That
+is how "declined is not defined" shipped: the declaration's indentation did not
+match, the replace silently did nothing, and the whole refresh loop threw at that
+panel — freezing autopilot, audit, storage and the feed while the header still
+updated, which looked like "nothing is working".
+
+These tests run the real functions with realistic payloads.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+PAGE = ROOT / "magicwand" / "dashboard.html"
+
+
+HARNESS = r"""
+const fs = require("fs");
+const src = fs.readFileSync(process.argv[2], "utf8");
+const js = src.match(/<script>([\s\S]*?)<\/script>/)[1];
+
+function el() {
+  return {
+    innerHTML: "", textContent: "", className: "", value: "", checked: false,
+    title: "", src: "", style: {}, scrollTop: 0, scrollHeight: 0, dataset: {},
+    classList: {add(){}, remove(){}, contains(){return false;}, toggle(){}},
+    appendChild(){}, insertAdjacentHTML(){}, addEventListener(){},
+    setAttribute(){}, removeAttribute(){}, focus(){}, querySelectorAll(){return [];},
+    onclick: null, onchange: null,
+  };
+}
+const cache = {};
+global.document = {
+  getElementById: (id) => (cache[id] = cache[id] || el()),
+  addEventListener(){},
+  querySelectorAll(){ return []; },
+};
+global.window = {};
+global.setInterval = () => 0;
+global.setTimeout = (f) => { try { f(); } catch (e) {} return 0; };
+global.clearTimeout = () => {};
+global.confirm = () => false;
+global.alert = () => {};
+global.TextDecoder = class { decode(v){ return String(v); } };
+global.fetch = async () => ({
+  ok: true, status: 200,
+  json: async () => ({ messages: [], models: {models: []}, result: {}, ok: true,
+                       settings: {}, state: {} }),
+  text: async () => "",
+  body: null,
+});
+
+const state = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+
+try {
+  eval(js);
+} catch (e) {
+  console.log("EVAL FAILED: " + e.message);
+  process.exit(1);
+}
+
+const research = {
+  ts: "2026-11-16T07:00:00Z", decision: "veto", evidence_score: -0.42,
+  summary: "5/5 readers reported", stub: false,
+  single_source_declined: ["news"],
+  agents: [
+    {agent: "news", stance: "veto", confidence: 0.68, evidence_score: -0.55,
+     corroboration: 1, thesis: "risk off", error: ""},
+    {agent: "social", stance: "neutral", confidence: 0.5, evidence_score: 0.1,
+     corroboration: 3, thesis: "quiet", error: ""},
+    {agent: "onchain", stance: "neutral", confidence: 0.0, evidence_score: 0.0,
+     corroboration: 0, thesis: "", error: "HTTP 500"},
+  ],
+  chart: {stance: "neutral", confidence: 0.5, thesis: "range",
+          observations: ["a"], injected_text_seen: true, error: ""},
+};
+
+const calls = [
+  ["renderAgents", () => renderAgents(research)],
+  ["renderAgents stub", () => renderAgents({stub: true, agents: []})],
+  ["renderAgents empty", () => renderAgents(null)],
+  ["renderDesk", () => renderDesk(state.desk)],
+  ["renderAudit", () => renderAudit(state.audit)],
+  ["renderAudit empty", () => renderAudit({})],
+  ["renderProposals", () => renderProposals(state.proposals)],
+  ["renderReflection", () => renderReflection(state.reflection, state.memory)],
+  ["renderStrategies", () => renderStrategies(state.strategies)],
+  ["renderFeed", () => renderFeed(state.recent)],
+  ["renderAutopilot", () => renderAutopilot(state.autopilot)],
+  ["renderChart", () => renderChart(state)],
+  ["renderTiers", () => renderTiers(state.tiers, state.policy.tier)],
+  ["md", () => md("**bold** `code`\n- a\n- b\n# head")],
+  ["renderChat", () => renderChat([{role:"user", text:"hi", ts:"t"},
+                                   {role:"assistant", text:"yo", ts:"t",
+                                    sources:[{title:"T", url:"https://a"}]}])],
+];
+
+let failed = 0;
+for (const [name, fn] of calls) {
+  try { fn(); }
+  catch (e) { failed++; console.log("RENDER FAILED [" + name + "]: " + e.message); }
+}
+if (failed) process.exit(1);
+console.log("all panels rendered: " + calls.length);
+"""
+
+STATE = {
+    "server_time": "t", "symbol": "SOL-USD", "exchange": "coinbase",
+    "timeframe": "1h", "account_equity": 50.0,
+    "account": {"equity": 50.0, "source": "config", "detail": "", "stale": False},
+    "policy": {"tier": 0, "tier_name": "research", "effective": {}, "reasoning": ""},
+    "tiers": {"0": "research", "1": "paper_desk"},
+    "desk": {"cash": 5.0, "position": None, "trades": 0, "win_rate": None,
+             "autonomy_armed": True, "revoked_reason": "", "trades_today": 0,
+             "recent_trades": []},
+    "research": {"decision": "veto", "agents": [], "summary": "s"},
+    "chart": {"file": "c.png", "kb": 20.0, "at": "2026-11-16T07:00:00Z"},
+    "reflection": {"ts": "t", "changes": ["shrank risk"], "summary": "s",
+                   "sample": {"trades": 1, "graded_agents": 2}},
+    "memory": {"blacklisted_families": ["sma_trend"], "preferred_families": [],
+               "agent_weights": {}},
+    "strategies": [{"name": "s", "family": "breakout", "metrics": {},
+                    "deployed": False}],
+    "proposals": {"total": 10, "validated": 3, "counts": {"passed": 0},
+                  "failing_gates": {"profitable": 3},
+                  "recent": [{"name": "n", "family": "f", "ok": False,
+                              "summary": "rejected", "metrics": {}}]},
+    "ledger": {"ok": True, "message": "chain intact", "entries": 10},
+    "equity_series": [{"ts": "t", "equity": 50.0}, {"ts": "t2", "equity": 51.0}],
+    "recent": [{"kind": "mark", "ts": "t", "payload": {"equity": 50}}],
+    "autopilot": {"running": True, "ticks": 3, "interval": 900, "errors": 0,
+                  "estimated_daily_cost_usd": 0.38, "next_in_seconds": 10,
+                  "last_result": "ok"},
+    "audit": {"ts": "2026-11-16T07:00:00Z", "gaps": 0, "passes": 23, "notes": 4},
+    "backups": {"archives": 4, "age_hours": 2.6, "enabled": True,
+                "interval_hours": 12, "keep": 14},
+    "settings": {"has_key": True, "model": "deepseek-flash",
+                 "markets": [{"symbol": "SOL-USD", "name": "Solana"}],
+                 "symbol": "SOL-USD", "exchange": "coinbase"},
+    "models": {"models": []}, "service": {}, "model_mode": "live",
+}
+
+
+@unittest.skipUnless(shutil.which("node"), "node is required for the UI runtime test")
+class TestConsoleRuntime(unittest.TestCase):
+    def test_every_panel_renders_without_throwing(self):
+        with tempfile.TemporaryDirectory() as d:
+            harness = Path(d) / "h.js"
+            harness.write_text(HARNESS)
+            state = Path(d) / "state.json"
+            state.write_text(json.dumps(STATE))
+            r = subprocess.run(["node", str(harness), str(PAGE), str(state)],
+                               capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0,
+                         f"stdout={r.stdout}\nstderr={r.stderr}")
+        self.assertIn("all panels rendered", r.stdout)
+
+    def test_declined_is_declared_before_use(self):
+        """The exact bug: used in renderAgents, declared nowhere."""
+        html = PAGE.read_text()
+        fn = html[html.index("function renderAgents"):]
+        fn = fn[:fn.index("\nfunction ", 10)]
+        self.assertIn("const declined", fn,
+                      "single_source_declined must be declared in renderAgents")
+        self.assertLess(fn.index("const declined"),
+                        fn.index("declined.length"))
+
+    def test_every_panel_call_is_guarded(self):
+        html = PAGE.read_text()
+        for name in ("agents", "desk", "audit", "storage", "autopilot",
+                     "proposals", "strategies", "feed"):
+            self.assertIn(f'safe("{name}"', html, name)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

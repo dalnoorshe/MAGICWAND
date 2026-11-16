@@ -655,7 +655,13 @@ function renderChat(messages) {
   box.scrollTop = box.scrollHeight;
 }
 
+let chatBusy = false;   // true while a stream is in flight
+
 async function loadChat() {
+  // The 5s refresh must not rebuild the log mid-stream: the server has no
+  // message yet, so it would wipe the live bubble and the answer would appear
+  // to "start, disappear, then arrive all at once" when history is saved.
+  if (chatBusy) return;
   try {
     const d = await (await fetch("/api/chat")).json();
     renderChat(d.messages || []);
@@ -668,6 +674,7 @@ async function sendChat() {
   if (!msg) return;
   el.value = "";
   $("btnChatSend").disabled = true;
+  chatBusy = true;
 
   // Optimistic bubbles: your message, then an empty one that fills in.
   const log = $("chatLog");
@@ -729,9 +736,11 @@ async function sendChat() {
     live.innerHTML = `<span class="bad">failed: ${esc(e.message)}</span>`;
     $("chatMeta").textContent = "stream failed";
   } finally {
+    chatBusy = false;
     $("btnChatSend").disabled = false;
     const b = $("liveBubble"); if (b) b.removeAttribute("id");
     const t = $("liveText"); if (t) t.removeAttribute("id");
+    loadChat();          // reconcile with the server copy, now that it exists
   }
 }
 
@@ -1103,7 +1112,7 @@ async function refresh() {
     renderStorage();
     renderBackups();
     renderProposals(s.proposals);
-    if ($("chatDrawer").classList.contains("open")) loadChat();
+    if ($("chatDrawer").classList.contains("open") && !chatBusy) loadChat();
   } catch (e) {
     toast("dashboard error: " + e.message);
   }

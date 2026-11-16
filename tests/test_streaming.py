@@ -112,3 +112,73 @@ class TestConsoleUsesTheStream(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestNoMidStreamWipe(unittest.TestCase):
+    """Regression: the 5s refresh rebuilt the log from server history while a
+    stream was in flight — so the answer 'started, disappeared, then appeared'
+    once history was saved."""
+
+    def _html(self) -> str:
+        return (Path(__file__).resolve().parents[1]
+                / "magicwand" / "dashboard.html").read_text()
+
+    def test_load_chat_refuses_while_streaming(self):
+        html = self._html()
+        idx = html.index("async function loadChat() {")
+        body = html[idx: idx + 320]
+        self.assertIn("if (chatBusy) return;", body)
+
+    def test_periodic_refresh_respects_the_guard(self):
+        html = self._html()
+        self.assertIn('!chatBusy', html)
+
+    def test_busy_flag_is_set_and_cleared(self):
+        html = self._html()
+        idx = html.index("async function sendChat() {")
+        body = html[idx: idx + 2600]
+        self.assertIn("chatBusy = true", body)
+        self.assertIn("chatBusy = false", body)
+
+
+class TestPromptAnswersTheQuestion(unittest.TestCase):
+    """A status dump in reply to 'help me understand' is a bug, not brevity."""
+
+    def test_system_prompt_demands_answering_the_question(self):
+        self.assertIn("ANSWER THE QUESTION THAT WAS ASKED", chat.SYSTEM)
+
+    def test_general_questions_get_explanation(self):
+        self.assertIn("gets an explanation", chat.SYSTEM)
+
+    def test_state_dump_is_explicitly_discouraged(self):
+        self.assertIn("status dump", chat.SYSTEM.lower())
+
+    def test_general_knowledge_is_allowed(self):
+        self.assertIn("General knowledge", chat.SYSTEM)
+
+    def test_read_only_is_still_enforced(self):
+        self.assertIn("CANNOT act", chat.SYSTEM)
+
+
+class TestToolingNeverTouchesRealHistory(unittest.TestCase):
+    """A regression guard for my own mistake.
+
+    While verifying the stream I wrote probe messages into the operator's real
+    data/chat.json, and then a cleanup filter matched a phrase inside HIS message
+    and deleted it. Tests and probes must use a temporary root; nothing in the
+    test suite may read or write the real chat history.
+    """
+
+    def test_tests_use_temporary_roots(self):
+        import inspect
+        import re
+        src = inspect.getsource(sys.modules[__name__])
+        calls = re.findall(r"chat\.(?:reply_stream|reply|save_history|load_history|start_new)\(([^)]*)\)", src)
+        bad = [c for c in calls if c.strip().startswith('"."')]
+        self.assertEqual(bad, [], f"tests touched the real root: {bad}")
+
+    def test_module_has_no_default_to_the_live_project(self):
+        import inspect
+        src = inspect.getsource(chat)
+        # Every entry point must take an explicit root; no default of ".".
+        self.assertNotIn('root: str | Path = "."', src)

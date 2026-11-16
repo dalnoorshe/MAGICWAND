@@ -421,8 +421,20 @@ What it can do is read the current state (mode, tier, market, desk, every
 reader's verdict and thesis, reflection, ledger health, backups) and answer:
 
 > *"Why did it veto?"* → names the readers, their evidence, and the threshold.
-> *"Why is nothing trading?"* → the tier ceiling, the gate's zero approvals.
+> *"Why is nothing trading?"* → the tier ceiling and the proposal funnel.
 > *"How do I add a market?"* → the exact control or command, for you to use.
+> *"I know nothing about trading — what is a veto?"* → a plain explanation, with
+> this system's numbers as the example.
+
+It answers the question that was asked. A general question gets a teaching
+answer; a question about right now gets the state. It no longer opens every
+reply with a dashboard summary, which read like a canned status dump.
+
+**Streaming is guarded against the refresh loop.** The console refreshes every
+five seconds; while an answer is streaming, the chat log is not rebuilt from
+server history (the message does not exist there yet, so rebuilding would wipe
+the live text and the answer would appear to start, vanish, then arrive all at
+once when the exchange is finally saved).
 
 Answers **stream token by token** (`/api/chat/stream`, server-sent events), so
 text appears as it is generated instead of after a pause. If the stream is cut

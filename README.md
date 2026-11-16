@@ -1016,6 +1016,25 @@ reality check, and then fund it from savings, not from hope.
 - [ ] `Broker` protocol, then paper/demo adapters (Alpaca → OANDA → Binance → MT5)
 - [ ] Live execution — only after a paper strategy survives the reality check, at 1% risk, with a kill switch
 
+## Browser agents (how Antigravity does it)
+
+`docs/BROWSER.md` breaks down Google Antigravity's browser use: it is **not
+magic**, it is Chrome driven over the DevTools Protocol (`Page.navigate`,
+`Input.dispatchMouseEvent`, `Page.captureScreenshot`), a model deciding **which
+numbered box** to click in a screenshot ("set-of-marks" — precise like the DOM,
+robust like vision), and a loop of *snapshot → act → snapshot → verify*.
+
+What Google got right that most demos miss: an isolated context per browser
+subagent, a **Stop** takeover button, and an **auth handoff** — on sign-in, MFA or
+a CAPTCHA the agent pauses and asks the human to sign in rather than typing
+credentials. Plus per-account cookie isolation and site-level approvals.
+
+For MAGICWAND the value is narrow and clear: **verify our own console** in a real
+browser (two UI bugs slipped past Python tests). It is the wrong tool for placing
+orders — an API call is signed, idempotent and auditable; a click is none of
+those. This machine has no Chromium, so the harness is documented rather than
+faked. See `docs/BROWSER.md` for the build plan and the constraint.
+
 ## Placing an actual order
 
 Every venue has an authenticated buy/sell endpoint; this repo implements **none**

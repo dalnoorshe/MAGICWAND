@@ -173,6 +173,22 @@ mode with its own budget and its own log, not smuggled into the chat box.
 
 ---
 
+## 5c. A browser harness for UI verification
+
+**Status:** documented, not built — no Chromium on the machine.
+**Trigger:** a Chromium binary (or `playwright install chromium`) exists.
+
+Shape: a small CDP client (~200 lines, stdlib WebSocket is not available, so
+`websocket-client` or a tiny raw-socket implementation), and `wand ui-check` that
+opens the real console, asserts each panel has content, clicks through Settings
+and the tier cards, verifies the ledger recorded the action, and saves a
+screenshot. That is the Antigravity pattern applied where it is unambiguously
+safe: our own local page, no credentials, no money.
+
+Explicitly rejected: automating orders through a UI (an API is deterministic and
+auditable; a click is neither) and keeping an exchange session signed in under an
+LLM's control.
+
 ## 5b. A testnet order adapter
 
 **Status:** not built. Reference: `docs/ORDER_API.md`.

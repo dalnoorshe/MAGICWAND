@@ -218,3 +218,41 @@
 [autopilot 08:51:49] autopilot started
 [autopilot 08:52:17] tick 1: research: 5/5 readers reported; evidence -0.17 | idea 'sol_tight_sma_short_hold' refused: near-duplicate of sol_oi_flush_trend_resume (max param difference 9.6%
 [autopilot 09:07:49] tick 2: research: 5/5 readers reported; evidence -0.18 | strategy 'sol_short_horizon_z_fade' rejected: REJECTED: not profitable at realistic costs (-0.08%); dies at 2x 
+[autopilot 09:23:33] tick 3: research: 5/5 readers reported; evidence -0.24; single-source veto declined from derivatives | strategy 'sol_quiet_tape_slow_grind_revert' rejected: REJECTED: n
+[autopilot 09:39:16] tick 4: research: 5/5 readers reported; evidence -0.28; VETO by derivatives | strategy 'sol_crowded_long_stop_unwind_short' rejected: REJECTED: not profitable at realis
+[autopilot 09:54:55] tick 5: research: 5/5 readers reported; evidence -0.24 | strategy 'sol_wide_vol_breakout_ride' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies at 2
+[autopilot 10:10:27] tick 6: research: 5/5 readers reported; evidence -0.19 | strategy 'sol_wide_range_reversion_snapback' rejected: REJECTED: not profitable at realistic costs (+0.00%); di
+[autopilot 10:26:03] tick 7: research: 5/5 readers reported; evidence -0.22 | strategy 'sol_funding_squeeze_momentum' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies at
+[autopilot 10:41:35] tick 8: research: 5/5 readers reported; evidence -0.20 | strategy 'sol_slow_trend_capitulation_reclaim' rejected: REJECTED: not profitable at realistic costs (+0.00%); 
+[autopilot 10:57:17] tick 9: research: 5/5 readers reported; evidence -0.28; VETO by onchain | strategy 'sol_short_breakout_crowded_flush' rejected: REJECTED: not profitable at realistic co
+[autopilot 11:12:51] tick 10: graded 1 agent claim(s) | research: 5/5 readers reported; evidence -0.28; VETO by news, onchain | strategy 'sol_deep_flush_capitulation_fade' rejected: REJECTED
+[autopilot 11:28:21] tick 11: research: 5/5 readers reported; evidence -0.24 | strategy 'sol_despair_breakout_ride' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies at 2x
+[autopilot 11:43:52] tick 12: research: 5/5 readers reported; evidence -0.22 | strategy 'sol_long_slow_trend_reclaim' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies at 
+[autopilot 11:59:24] tick 13: research: 5/5 readers reported; evidence -0.11 | strategy 'sol_crowded_long_short_snapback' rejected: REJECTED: not profitable at realistic costs (-8.94%); dies
+[autopilot 12:14:58] tick 14: research: 5/5 readers reported; evidence -0.32; VETO by news; single-source veto declined from derivatives | idea 'sol_aggressive_momo_scalp' refused: near-dupl
+[autopilot 12:30:34] tick 15: research: 5/5 readers reported; evidence -0.32; VETO by news; single-source veto declined from derivatives | strategy 'sol_short_breakdown_momentum' rejected: R
+[autopilot 12:46:08] tick 16: research: 5/5 readers reported; evidence -0.29; VETO by onchain | strategy 'sol_post_capitulation_trend_reclaim' rejected: REJECTED: not profitable at realistic
+[autopilot 13:01:47] tick 17: research: 5/5 readers reported; evidence -0.28; single-source veto declined from derivatives | strategy 'sol_volatility_contraction_fade' rejected: REJECTED: no
+[autopilot 13:17:45] tick 18: research: 5/5 readers reported; evidence -0.26; single-source veto declined from derivatives | strategy 'sol_negative_funding_breakout_squeeze' rejected: REJECT
+[autopilot 13:33:24] tick 19: research: 5/5 readers reported; evidence -0.30; single-source veto declined from derivatives, onchain | strategy 'sol_fear_extreme_reversion' rejected: REJECTED
+[autopilot 13:48:56] tick 20: research: 5/5 readers reported; evidence -0.20 | strategy 'sol_extreme_fear_slow_reversion' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies
+[autopilot 14:04:31] tick 21: research: 5/5 readers reported; evidence -0.25; single-source veto declined from derivatives | strategy 'sol_slow_breakout_trend_follow' rejected: REJECTED: not
+[autopilot 14:20:10] tick 22: research: 5/5 readers reported; evidence -0.18 | idea 'sol_oversold_funding_short_squeeze' refused: near-duplicate of sol_short_breakout_crowded_flush (max para
+[autopilot 14:35:47] tick 23: research: 5/5 readers reported; evidence -0.14 | idea 'sol_fast_trend_continuation' refused: near-duplicate of sol_funding_squeeze_momentum (max param differenc
+[autopilot 14:51:24] tick 24: research: 5/5 readers reported; evidence -0.20 | strategy 'sol_funding_neg_short_squeeze_breakout' rejected: REJECTED: not profitable at realistic costs (+0.00%
+[autopilot 15:22:19] tick 25: research: 5/5 readers reported; evidence +0.02 | idea 'sol_slow_grind_trend_filter' refused: near-duplicate of sol_slow_trend_capitulation_reclaim (max param di
+[autopilot 15:52:57] tick 26: research: 5/5 readers reported; evidence -0.02 | strategy 'sol_slow_mean_revert_capitulation_buy' rejected: REJECTED: not profitable at realistic costs (+0.00%)
+[autopilot 16:08:27] tick 27: research: 5/5 readers reported; evidence +0.01 | idea 'sol_deep_fear_reversion_fast' refused: near-duplicate of sol_short_horizon_z_fade (max param difference 6
+[autopilot 16:23:59] tick 28: research: 5/5 readers reported; evidence -0.01 | idea 'sol_zelle_news_breakout' refused: near-duplicate of sol_neg_funding_short_squeeze_break (max param differ
+[autopilot 16:39:29] tick 29: research: 5/5 readers reported; evidence -0.08 | idea 'sol_short_fast_trend_catch' refused: near-duplicate of sol_fast_sma_squeeze_trend (max param difference 4
+[autopilot 16:55:16] tick 30: research: 5/5 readers reported; evidence -0.16 | strategy 'sol_slow_sma_regime_filter' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies at 2
+[autopilot 17:10:47] tick 31: research: 5/5 readers reported; evidence -0.06 | idea 'sol_neg_funding_short_squeeze_fast' refused: near-duplicate of sol_vol_compression_breakout (max param di
+[autopilot 17:26:18] tick 32: research: 5/5 readers reported; evidence -0.09 | strategy 'sol_squeeze_range_breakout_wide' rejected: REJECTED: not profitable at realistic costs (+0.00%); dies
+[autopilot 17:41:48] tick 33: research: 5/5 readers reported; evidence -0.08 | idea 'sol_short_tf_fast_trend' refused: near-duplicate of sol_negative_funding_short_squeeze (max param differe
+[autopilot 17:57:21] tick 34: research: 5/5 readers reported; evidence -0.11 | strategy 'sol_fast_mean_revert_dip' rejected: REJECTED: not profitable at realistic costs (-5.71%); dies at 2x 
+[autopilot 18:12:57] tick 35: research: 5/5 readers reported; evidence -0.24; VETO by news; single-source veto declined from derivatives | strategy 'sol_capitulation_zscore_bounce_wide' reje
+[autopilot 18:28:32] tick 36: research: 5/5 readers reported; evidence -0.17; VETO by news | strategy 'sol_neg_funding_crowded_long_fade' rejected: REJECTED: not profitable at realistic cost
+[autopilot 18:44:03] tick 37: research: 5/5 readers reported; evidence -0.14 | strategy 'sol_short_squeeze_breakout_tight' rejected: REJECTED: not profitable at realistic costs (-1.47%); die
+[autopilot 18:59:41] tick 38: research: 5/5 readers reported; evidence -0.14 | strategy 'sol_crowded_long_funding_fade_short' rejected: REJECTED: not profitable at realistic costs (+0.00%); 
+[autopilot 19:14:07] autopilot started
+[autopilot 19:14:38] tick 1: research: 5/5 readers reported; evidence -0.14 | idea 'sol_slow_mean_revert_funding_fade' refused: near-duplicate of offline_mean_revert_19 (max param differenc

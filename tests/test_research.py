@@ -784,3 +784,151 @@ class TestDistinctStories(unittest.TestCase):
         text = s.to_prompt()
         self.assertIn("2 distinct", text)
         self.assertIn("count STORIES", text)
+
+
+class TestSocialCrowdSources(unittest.TestCase):
+    """The social reader used to be one Reddit URL, so a block silenced it.
+
+    Reddit refuses scripted clients (403/404/429), and its feed path was wrong
+    too. Attention and mood come from sources that answer, and the reader is
+    told what it did not get, so it cannot describe posts it never saw.
+    """
+
+    def setUp(self) -> None:
+        from magicwand import research as r
+        self.r = r
+        r.reset_reddit_cooldown()
+        self._saved = (r._reddit_entries, r._crowd_attention, r._crowd_mood,
+                       r._fetch)
+
+    def tearDown(self) -> None:
+        r = self.r
+        (r._reddit_entries, r._crowd_attention, r._crowd_mood,
+         r._fetch) = self._saved
+        r.reset_reddit_cooldown()
+
+    def test_blocked_reddit_still_gives_attention_and_mood(self):
+        self.r._reddit_entries = lambda sub: ([], "HTTP 404 from reddit")
+        self.r._crowd_attention = lambda base: {"trending": False,
+                                                "trending_rank": None,
+                                                "trending_out_of": 15,
+                                                "trending_top": ["BTC"]}
+        self.r._crowd_mood = lambda: {"fear_greed": 11,
+                                      "fear_greed_label": "Extreme Fear"}
+        src = self.r.fetch_social("solana", symbol="SOL-USD", base="SOL")
+        self.assertTrue(src.ok, "a blocked Reddit must not silence the reader")
+        self.assertEqual(src.data["missing"], ["reddit"])
+        self.assertIn("404", src.data["reddit_unavailable"])
+        self.assertFalse(src.data["attention"]["trending"])
+        self.assertEqual(src.data["mood"]["fear_greed"], 11)
+
+    def test_reddit_volume_is_used_when_it_answers(self):
+        now = utcnow()
+        entries = [{"title": f"post {i}",
+                    "updated": now - timedelta(minutes=20 * i)}
+                   for i in range(8)]
+        self.r._reddit_entries = lambda sub: (entries, "")
+        self.r._crowd_attention = lambda base: {"trending": True,
+                                                "trending_rank": 3,
+                                                "trending_out_of": 15,
+                                                "trending_top": ["SOL"]}
+        self.r._crowd_mood = lambda: {"fear_greed": 60,
+                                      "fear_greed_label": "Greed"}
+        src = self.r.fetch_social("solana", symbol="SOL-USD", base="SOL")
+        self.assertTrue(src.ok)
+        self.assertNotIn("reddit", src.data["missing"])
+        self.assertEqual(src.data["posts_in_feed"], 8)
+        self.assertTrue(src.data["samples"])
+        self.assertTrue(src.data["attention"]["trending"])
+
+    def test_nothing_answering_is_degraded_not_invented(self):
+        self.r._reddit_entries = lambda sub: ([], "HTTP 429 from reddit")
+        self.r._crowd_attention = lambda base: {}
+        self.r._crowd_mood = lambda: {}
+        src = self.r.fetch_social("solana", symbol="SOL-USD", base="SOL")
+        self.assertFalse(src.ok)
+        self.assertIn("0 of 3 crowd sources", src.error)
+        self.assertEqual(sorted(src.data["missing"]),
+                         ["coingecko trending", "fear & greed", "reddit"])
+
+    def test_one_source_is_not_enough_to_speak(self):
+        self.r._reddit_entries = lambda sub: ([], "HTTP 429")
+        self.r._crowd_attention = lambda base: {}
+        self.r._crowd_mood = lambda: {"fear_greed": 50,
+                                      "fear_greed_label": "Neutral"}
+        src = self.r.fetch_social("solana", symbol="SOL-USD", base="SOL")
+        self.assertFalse(src.ok, "a mood number alone is not a crowd read")
+
+    def test_prompt_tells_the_reader_what_it_did_not_get(self):
+        from magicwand.common import iso, utcnow
+        from magicwand.research import MarketSnapshot, Source
+        snap = MarketSnapshot(ts=iso(utcnow()), symbol="SOL-USD", price=71.0)
+        snap.sources["social"] = Source("social", True, snap.ts, {
+            "subreddit": "solana",
+            "attention": {"trending": False, "trending_rank": None,
+                          "trending_out_of": 15,
+                          "trending_top": ["BTC", "ETH", "TRUMP"]},
+            "mood": {"fear_greed": 11, "fear_greed_label": "Extreme Fear"},
+            "reddit_unavailable": "HTTP 429 from reddit",
+            "missing": ["reddit"]})
+        txt = snap.to_prompt()
+        self.assertIn("crowd attention", txt)
+        self.assertIn("NOT in CoinGecko's trending", txt)
+        self.assertIn("Fear & Greed 11/100", txt)
+        self.assertIn("reddit: UNAVAILABLE (HTTP 429", txt)
+        self.assertIn("do not describe posts", txt)
+        self.assertNotIn("posts in 24h", txt,
+                         "the prompt must not imply post volume it never had")
+
+    def test_prompt_hands_over_posts_when_reddit_answers(self):
+        from magicwand.common import iso, utcnow
+        from magicwand.research import MarketSnapshot, Source
+        snap = MarketSnapshot(ts=iso(utcnow()), symbol="SOL-USD")
+        snap.sources["social"] = Source("social", True, snap.ts, {
+            "subreddit": "solana", "posts_in_feed": 8, "posts_24h": 31.0,
+            "posts_per_day_baseline": 25.0, "volume_z": 1.2,
+            "attention": {"trending": True, "trending_rank": 4,
+                          "trending_out_of": 15, "trending_top": ["SOL"]},
+            "mood": {"fear_greed": 60, "fear_greed_label": "Greed"},
+            "samples": ["SOL to the moon", "why is sol dumping"],
+            "missing": []})
+        txt = snap.to_prompt()
+        self.assertIn("trending searches at rank 4", txt)
+        self.assertIn("SOL to the moon", txt)
+        self.assertIn("volume z=1.2", txt)
+        self.assertNotIn("UNAVAILABLE", txt)
+
+    def test_a_refusal_puts_reddit_in_cooldown(self):
+        calls = []
+
+        def boom(url, headers=None):
+            calls.append(url)
+            raise self.r.SourceError(f"HTTP 429 from {url}")
+
+        saved_fetch = self.r._fetch
+        self.r._fetch = boom
+        try:
+            entries, err = self.r._reddit_entries("solana")
+            self.assertEqual(entries, [])
+            self.assertIn("429", err)
+            self.assertIsNotNone(self.r.reddit_cooldown_until())
+            first = len(calls)
+            # The next tick must not ask a refused endpoint again.
+            entries2, err2 = self.r._reddit_entries("solana")
+            self.assertEqual(entries2, [])
+            self.assertIn("refused earlier", err2)
+            self.assertEqual(len(calls), first, "cooldown did not stop the retry")
+        finally:
+            self.r._fetch = saved_fetch
+
+    def test_a_good_reddit_read_clears_the_cooldown(self):
+        feed = ("<?xml version='1.0'?><feed xmlns='http://www.w3.org/2005/Atom'>"
+                "<entry><title>gm</title>"
+                "<updated>2026-11-18T18:00:00Z</updated></entry></feed>")
+        # Start in cooldown, then let a read succeed: the cooldown must clear.
+        self.r._REDDIT_DOWN_UNTIL = None
+        self.r._fetch = lambda url, headers=None: feed
+        entries, err = self.r._reddit_entries("solana")
+        self.assertTrue(entries)
+        self.assertEqual(err, "")
+        self.assertIsNone(self.r.reddit_cooldown_until())

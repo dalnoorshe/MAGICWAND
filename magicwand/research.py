@@ -7,7 +7,8 @@ public endpoints and cached with a timestamp.
 Four families:
   * derivatives — funding, positioning, open interest, taker pressure
   * news        — RSS headlines with a published time
-  * social      — Reddit post volume (Atom feed; the JSON API is blocked)
+  * social      — crowd attention and mood: CoinGecko trending, the Fear &
+                  Greed index, and Reddit post volume when Reddit answers
   * onchain     — mempool pressure, stablecoin supply, market-cap flows
 
 Everything is best-effort. A dead source yields a `missing` note, never an
@@ -29,6 +30,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Optional
 
 from .common import iso, utcnow
+from .markets import base_symbol
 
 UA_BOT = "magicwand-research/0.1 (+paper-trading research; contact via repo)"
 _TIMEOUT = 20.0
@@ -126,12 +128,37 @@ class MarketSnapshot:
         s = self.sources.get("social")
         if s and s.ok:
             x = s.data
-            lines.append(
-                f"social: r/{x.get('subreddit')} {x.get('posts_24h')} posts in 24h "
-                f"(baseline {x.get('posts_per_day_baseline')}/day, "
-                f"volume z={x.get('volume_z')})")
-            for it in x.get("samples", [])[:max_posts]:
-                lines.append(f"  - {it}")
+            att = x.get("attention") or {}
+            mood = x.get("mood") or {}
+            if att:
+                if att.get("trending"):
+                    lines.append(
+                        f"social: crowd attention — in CoinGecko's trending "
+                        f"searches at rank {att.get('trending_rank')} of "
+                        f"{att.get('trending_out_of')}")
+                else:
+                    leaders = ", ".join(att.get("trending_top", [])[:5])
+                    lines.append(
+                        f"social: crowd attention — NOT in CoinGecko's trending "
+                        f"top {att.get('trending_out_of')}; attention is "
+                        f"elsewhere (led by {leaders})")
+            if mood:
+                lines.append(
+                    f"  crowd mood: Fear & Greed {mood.get('fear_greed')}/100 "
+                    f"({mood.get('fear_greed_label')}) — market-wide, not "
+                    f"specific to {self.symbol}")
+            if x.get("reddit_unavailable"):
+                lines.append(
+                    f"  reddit: UNAVAILABLE ({x['reddit_unavailable']}) — no post "
+                    f"volume and no titles were read; say so explicitly and do "
+                    f"not describe posts")
+            elif x.get("posts_24h") is not None:
+                lines.append(
+                    f"  reddit r/{x.get('subreddit')}: {x.get('posts_24h')} posts "
+                    f"in 24h (baseline {x.get('posts_per_day_baseline')}/day, "
+                    f"volume z={x.get('volume_z')})")
+                for it in x.get("samples", [])[:max_posts]:
+                    lines.append(f"    - {it}")
         o = self.sources.get("onchain")
         if o and o.ok:
             x = o.data
@@ -344,10 +371,30 @@ def fetch_news(hours: int = 24, feeds: Optional[dict] = None,
 
 
 # --------------------------------------------------------------------------
-# Social (Reddit Atom feed; JSON API is blocked)
+# Social — crowd attention and mood
+#
+# This used to be one Reddit Atom URL, and when Reddit stopped answering the
+# whole reader became a red error card. Three lessons, all paid for:
+#
+#   * the URL was wrong. r/<sub>/new/.rss 404s; r/<sub>/new.rss is the feed.
+#   * Reddit nevertheless refuses scripted clients from most hosts (403, 404
+#     and 429, varying by the hour), so it cannot be the ONLY source.
+#   * "is the crowd paying attention" and "how does the crowd feel" do not
+#     actually require Reddit. CoinGecko's trending list and the Fear & Greed
+#     index answer both, without a key, and both were verified working.
+#
+# So: Reddit is best-effort with a cooldown, and the reader is told exactly
+# which parts it got. A reader that cannot see the posts must not pretend to
+# have read them.
 # --------------------------------------------------------------------------
 
 SUBREDDITS = ["solana", "CryptoCurrency", "Bitcoin", "ethtrader"]
+
+REDDIT_HOSTS = ("https://www.reddit.com", "https://old.reddit.com")
+# A refused endpoint is not worth asking again on the next tick.
+REDDIT_COOLDOWN = timedelta(minutes=45)
+_REDDIT_DOWN_UNTIL: Optional[datetime] = None
+
 
 def subreddit_for(symbol: str) -> str:
     """Community for a market, taken from the markets registry.
@@ -359,68 +406,175 @@ def subreddit_for(symbol: str) -> str:
     return _s(symbol)
 
 
-def fetch_social(subreddit: str = "solana", samples: int = 8) -> Source:
-    """Post volume with a z-score vs its own trailing window, plus title samples.
+def reddit_cooldown_until() -> Optional[datetime]:
+    """When Reddit will be tried again, or None if it is not in cooldown."""
+    return _REDDIT_DOWN_UNTIL
 
-    Volume, not sentiment, is the headline number: the JSON API is blocked, so
-    we count what the Atom feed gives us and normalise against the same feed's
-    own past. Sentiment is left to the agent reading the titles.
+
+def reset_reddit_cooldown() -> None:
+    """Forget a refusal (used by tests, and after a successful read)."""
+    global _REDDIT_DOWN_UNTIL
+    _REDDIT_DOWN_UNTIL = None
+
+
+def _reddit_entries(subreddit: str) -> tuple[list[dict], str]:
+    """Best-effort Reddit Atom read. Returns (entries, error).
+
+    Never raises: a blocked source is a fact to report, not a crash. A refusal
+    from any host puts Reddit in a cooldown so the next few ticks skip it
+    instead of hammering an endpoint that has said no.
     """
-    url = f"https://www.reddit.com/r/{subreddit}/new/.rss"
-    try:
-        raw = _fetch(url)
-    except SourceError as e:
-        return Source(name="social", ok=False, fetched_at=iso(utcnow()),
-                      error=f"reddit feed unavailable: {e}")
-    try:
-        root = ET.fromstring(raw)
-    except ET.ParseError:
-        return Source(name="social", ok=False, fetched_at=iso(utcnow()),
-                      error="reddit feed was not valid XML")
-    entries = []
-    for node in root.iter():
-        if node.tag.split("}")[-1] != "entry":
-            continue
-        title = node.findtext("{*}title") or ""
-        upd = node.findtext("{*}updated") or ""
-        dt = _parse_date(upd)
-        entries.append({"title": title.strip()[:200], "updated": dt})
-    entries = [e for e in entries if e["title"]]
-    if not entries:
-        return Source(name="social", ok=False, fetched_at=iso(utcnow()),
-                      error="reddit feed returned no entries")
-
+    global _REDDIT_DOWN_UNTIL
     now = utcnow()
-    in_24h = [e for e in entries if e["updated"] and (now - e["updated"]) <= timedelta(hours=24)]
-    times = [e["updated"] for e in entries if e["updated"]]
-    volume_z = 0.0
-    posts_24h = float(len(in_24h))
-    baseline_per_day = 25.0     # a full Atom page is the nominal steady state
-    expected_count = None
-    span_h = None
+    if _REDDIT_DOWN_UNTIL is not None and now < _REDDIT_DOWN_UNTIL:
+        return [], (f"reddit refused earlier; next attempt after "
+                    f"{_REDDIT_DOWN_UNTIL:%H:%M}Z")
+    problems: list[str] = []
+    for host in REDDIT_HOSTS:
+        url = f"{host}/r/{subreddit}/new.rss"
+        try:
+            raw = _fetch(url)
+        except SourceError as e:
+            problems.append(str(e))
+            if any(c in str(e) for c in ("403", "404", "429", "451")):
+                _REDDIT_DOWN_UNTIL = now + REDDIT_COOLDOWN
+            continue
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError:
+            problems.append(f"{host}: not valid XML")
+            continue
+        entries = []
+        for node in root.iter():
+            if node.tag.split("}")[-1] != "entry":
+                continue
+            title = node.findtext("{*}title") or ""
+            upd = node.findtext("{*}updated") or ""
+            if title.strip():
+                entries.append({"title": title.strip()[:200],
+                                "updated": _parse_date(upd)})
+        if entries:
+            _REDDIT_DOWN_UNTIL = None
+            return entries, ""
+        problems.append(f"{host}: feed had no entries")
+    return [], "; ".join(problems) or "reddit unreachable"
+
+
+def _reddit_volume(entries: list[dict]) -> dict:
+    """Post volume as a Poisson z against a nominal steady state of the page."""
+    now = utcnow()
+    times = [e["updated"] for e in entries if e.get("updated")]
+    baseline_per_day = 25.0
+    out: dict[str, Any] = {
+        "posts_in_feed": len(entries),
+        "posts_24h": float(sum(1 for t in times
+                               if (now - t) <= timedelta(hours=24))),
+        "posts_per_day_baseline": baseline_per_day,
+        "volume_z": 0.0, "feed_span_hours": None, "expected_count": None,
+    }
     if len(times) >= 3:
         span_h = (max(times) - min(times)).total_seconds() / 3600.0
         if span_h > 0:
-            posts_24h = round(len(entries) / span_h * 24.0, 1)
-            # Poisson test: is the feed fuller or emptier than a steady state
-            # of `baseline_per_day` would predict for a page spanning span_h?
-            expected_count = baseline_per_day * (span_h / 24.0)
-            if expected_count > 0:
-                volume_z = round((len(entries) - expected_count) / (expected_count ** 0.5), 2)
+            out["feed_span_hours"] = round(span_h, 2)
+            out["posts_24h"] = round(len(entries) / span_h * 24.0, 1)
+            expected = baseline_per_day * (span_h / 24.0)
+            out["expected_count"] = round(expected, 1)
+            if expected > 0:
+                out["volume_z"] = round((len(entries) - expected) / (expected ** 0.5), 2)
+    return out
+
+
+def _crowd_attention(base: str) -> dict:
+    """Is the crowd searching for this ticker? CoinGecko's trending list.
+
+    An absence is informative and is reported as such: SOL missing from the
+    trending page means retail attention is somewhere else, which is a
+    contrarian-neutral fact, not a missing measurement.
+    """
+    if not base:
+        return {}
+    try:
+        d = _get_json("https://api.coingecko.com/api/v3/search/trending")
+    except (SourceError, ValueError):
+        return {}
+    items = []
+    for entry in (d.get("coins") or [])[:15]:
+        item = entry.get("item") or {}
+        sym = str(item.get("symbol") or "").upper()
+        if sym:
+            items.append(sym)
+    if not items:
+        return {}
+    return {"trending": base in items,
+            "trending_rank": (items.index(base) + 1) if base in items else None,
+            "trending_out_of": len(items),
+            "trending_top": items[:5]}
+
+
+def _crowd_mood() -> dict:
+    """The Fear & Greed index: one number for how the crowd feels today."""
+    try:
+        d = _get_json("https://api.alternative.me/fng/?limit=1")
+        row = (d.get("data") or [{}])[0]
+        value = int(row.get("value"))
+    except (SourceError, ValueError, TypeError, IndexError, AttributeError):
+        return {}
+    if not (0 <= value <= 100):
+        return {}
+    return {"fear_greed": value,
+            "fear_greed_label": str(row.get("value_classification") or "")[:40]}
+
+
+def fetch_social(subreddit: str = "solana", samples: int = 8,
+                 symbol: str = "", base: str = "") -> Source:
+    """Crowd read: Reddit if it answers, attention and mood regardless.
+
+    `ok` means at least two of the three answered, so a blocked Reddit no
+    longer silences the reader — it just narrows what it can claim to know.
+    """
+    if not base and symbol:
+        base = symbol.split("-")[0].upper()
+    data: dict[str, Any] = {
+        "subreddit": subreddit,
+        "caveats": [
+            "Reddit blocks scripted clients from many hosts; its absence is "
+            "reported rather than hidden",
+            "trending presence is retail search attention, not opinion",
+            "the Fear & Greed index is market-wide, not specific to this asset",
+        ],
+    }
+    answered = 0
+    missing: list[str] = []
+
+    entries, reddit_error = _reddit_entries(subreddit)
+    if entries:
+        data.update(_reddit_volume(entries))
+        data["samples"] = [e["title"] for e in entries[:samples]]
+        answered += 1
     else:
-        span_h = None
+        data["reddit_unavailable"] = reddit_error
+        missing.append("reddit")
+
+    attention = _crowd_attention(base)
+    if attention:
+        data["attention"] = attention
+        answered += 1
+    else:
+        missing.append("coingecko trending")
+
+    mood = _crowd_mood()
+    if mood:
+        data["mood"] = mood
+        answered += 1
+    else:
+        missing.append("fear & greed")
+
+    data["missing"] = missing
+    ok = answered >= 2
     return Source(
-        name="social", ok=True, fetched_at=iso(utcnow()),
-        data={
-            "subreddit": subreddit,
-            "posts_in_feed": len(entries),
-            "posts_24h": posts_24h,
-            "posts_per_day_baseline": baseline_per_day,
-            "feed_span_hours": round(span_h, 2) if span_h else None,
-            "expected_count": round(expected_count, 1) if expected_count else None,
-            "volume_z": volume_z,
-            "samples": [e["title"] for e in entries[:samples]],
-        })
+        name="social", ok=ok, fetched_at=iso(utcnow()), data=data,
+        error="" if ok else (f"only {answered} of 3 crowd sources answered: "
+                             + ", ".join(missing)))
 
 
 # --------------------------------------------------------------------------
@@ -506,7 +660,8 @@ def build_snapshot(symbol: str = "BTC", news_hours: int = 24,
     snap = MarketSnapshot(ts=iso(utcnow()), symbol=symbol, price=price)
     snap.sources["derivatives"] = fetch_derivatives(symbol)
     snap.sources["news"] = fetch_news(hours=news_hours)
-    snap.sources["social"] = fetch_social(subreddit)
+    snap.sources["social"] = fetch_social(subreddit, symbol=symbol,
+                                         base=base_symbol(symbol))
     snap.sources["onchain"] = fetch_onchain()
 
     if cache_dir:

@@ -166,12 +166,19 @@ _AGENT_SPEC = {
         "exchange failures matter. Price commentary, listicles, and recycled "
         "summaries do not. Be specific about which headlines drove your view."),
     "social": (
-        "You are the SOCIAL reader. Look only at the subreddit volume and "
-        "sample titles.\n"
+        "You are the SOCIAL reader. You are given three things: crowd "
+        "ATTENTION (whether this ticker is in CoinGecko's trending searches), "
+        "crowd MOOD (the market-wide Fear & Greed index), and, only when Reddit "
+        "answers, post volume with sample titles.\n"
         "Treat crowd extremes as CONTRARIAN evidence: euphoric, high-volume "
         "enthusiasm has historically been a poor time to buy, and capitulation "
-        "a poor time to sell. Low volume with neutral titles is neutral. "
-        "Ignore individual posts as price predictions; they are not."),
+        "a poor time to sell. Extreme Fear is not a buy signal by itself and "
+        "extreme Greed is not a sell signal by itself; say when a reading is "
+        "merely neutral. Absence from the trending list means attention is "
+        "elsewhere, which is a fact about the market, not a hole in the data.\n"
+        "If the snapshot lists a source under `missing` (usually reddit), say "
+        "so plainly and do NOT describe posts you were not given. Ignore "
+        "individual posts as price predictions; they are not."),
     "onchain": (
         "You are the ON-CHAIN reader. Look only at mempool pressure, "
         "stablecoin supply change, total market-cap change, and BTC dominance.\n"

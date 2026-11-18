@@ -8,7 +8,9 @@ A market is only listed here if all four of its sources actually exist:
 
     candles    a Coinbase pair (the default feed) or a Kraken pair
     derivatives a Binance USDT-M perpetual (funding, OI, positioning)
-    social      a subreddit to read
+    social      crowd sources: a subreddit (best-effort; Reddit blocks bots),
+                CoinGecko trending for retail attention, and the Fear & Greed
+                index for crowd mood
     onchain     the shared proxies (not per-market, but stated for honesty)
 
 If a source does not exist, the market is not listed. Membership of this table
@@ -35,6 +37,7 @@ class Market:
     kraken: str                 # Kraken pair, or "" if unsupported there
     binance_perp: str           # Binance USDT-M symbol for derivatives
     subreddit: str
+    coingecko: str = ""         # CoinGecko id, for crowd-attention data
     min_notional: float = 5.0   # venue minimum this market is verified against
     note: str = ""
 
@@ -54,17 +57,17 @@ class Market:
 MARKETS: dict[str, Market] = {
     "SOL-USD": Market(
         symbol="SOL-USD", name="Solana", coinbase="SOL-USD", kraken="SOLUSD",
-        binance_perp="SOLUSDT", subreddit="solana"),
+        binance_perp="SOLUSDT", subreddit="solana", coingecko="solana"),
     "BTC-USD": Market(
         symbol="BTC-USD", name="Bitcoin", coinbase="BTC-USD", kraken="XBTUSD",
-        binance_perp="BTCUSDT", subreddit="Bitcoin"),
+        binance_perp="BTCUSDT", subreddit="Bitcoin", coingecko="bitcoin"),
     "ETH-USD": Market(
         symbol="ETH-USD", name="Ethereum", coinbase="ETH-USD", kraken="ETHUSD",
-        binance_perp="ETHUSDT", subreddit="ethtrader"),
+        binance_perp="ETHUSDT", subreddit="ethtrader", coingecko="ethereum"),
     "PAXG-USD": Market(
         symbol="PAXG-USD", name="Gold (tokenised, PAXG)",
         coinbase="PAXG-USD", kraken="PAXGUSD",
-        binance_perp="PAXGUSDT", subreddit="Gold",
+        binance_perp="PAXGUSDT", subreddit="Gold", coingecko="pax-gold",
         note="proxy for XAU/USD: token risk, and it can trade off the spot price"),
 }
 
@@ -112,6 +115,17 @@ def binance_spot(symbol: str) -> str:
 def subreddit_for(symbol: str) -> str:
     m = get(symbol)
     return m.subreddit if m else "CryptoCurrency"
+
+
+def coingecko_for(symbol: str) -> str:
+    """CoinGecko id for a market, or "" when it is not in the registry."""
+    m = get(symbol)
+    return m.coingecko if m else ""
+
+
+def base_symbol(symbol: str) -> str:
+    """'SOL-USD' -> 'SOL'. The ticker as the crowd would type it."""
+    return (symbol or "").split("-")[0].upper()
 
 
 def is_supported(symbol: str) -> bool:

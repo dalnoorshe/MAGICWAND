@@ -266,3 +266,5 @@
 [autopilot 21:34:30] tick 9: research: 5/5 readers reported; evidence -0.22; single-source veto declined from derivatives | strategy 'sol_crowded_long_short_trend' rejected: REJECTED: not p
 [autopilot 18:45:13] autopilot started
 [autopilot 18:45:52] tick 1: graded 102 agent claim(s) | research: 4/5 readers reported; 1 degraded; evidence -0.29; VETO by news, onchain | strategy 'sol_fast_deep_reversion_short' rejecte
+[autopilot 19:00:33] autopilot started
+[autopilot 19:01:06] tick 1: research: 4/5 readers reported; 1 degraded; evidence -0.24; VETO by news, onchain | strategy 'sol_deep_pullback_revert_wide' rejected: REJECTED: not profitable 

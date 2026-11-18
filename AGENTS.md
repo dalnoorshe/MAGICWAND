@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 416 tests
+python3 -m unittest discover -s tests -v  # 424 tests
 ```
 
 `wand audit` runs adversarial scenarios against the real code in throwaway
@@ -103,7 +103,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 416 tests, 0 audit gaps, 23 audit passes.
+- 424 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -111,6 +111,13 @@ These were each learned by breaking them. Do not "improve" them away.
 - No live broker exists by design. `live` tier is refused.
 - Proposals were 61% identical reruns until exploration was tightened; the
   funnel card in the console tracks it.
+- **Reddit refuses scripted clients** (403/404/429, hour by hour), and its feed
+  path was wrong (`/new/.rss` 404s; `/new.rss` is the feed). Social is now
+  crowd attention (CoinGecko trending) + crowd mood (Fear & Greed) + Reddit
+  best-effort behind a 45-minute cooldown. The prompt says which part was
+  missing, so a reader cannot describe posts it never saw. Do not make any
+  single external source load-bearing again — that is how one 404 greyed out a
+  whole reader.
 - The trend forecaster reports **no skill** on real SOL data (50.1% vs 50.9%
   base rate, Brier worse). Do not "improve" it by weakening the baseline: the
   first version compared against a hard 0/1 prediction and claimed an edge it

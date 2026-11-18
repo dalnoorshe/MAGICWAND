@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 416 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 424 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -164,7 +164,7 @@ python3 wand.py research --offline --offline-snapshot
 |---|---|---|
 | Derivatives | Binance public API | funding, retail + top-trader long/short, OI change, taker buy/sell |
 | News | Cointelegraph, Decrypt, Bitcoin Magazine, CoinDesk RSS | 24h window, deduped, timestamped |
-| Social | Reddit Atom feed | JSON API is blocked; the feed works with a bot UA. **It rate-limits hard.** |
+| Social | CoinGecko trending, alternative.me Fear & Greed, Reddit Atom | Trending = is the ticker in the crowd's searches; Fear & Greed = crowd mood (market-wide). Reddit adds post volume + titles **when it answers** — it refuses scripted clients (403/404/429), so it is best-effort with a 45-minute cooldown, not a dependency. |
 | On-chain | blockchain.info, DefiLlama, CoinGecko | mempool, stablecoin supply, market-cap flows — **proxies, and labelled as such** |
 
 A source that fails is marked `DEGRADED` and named in the prompt. Absence of
@@ -173,8 +173,12 @@ data lowers confidence; it is never quietly treated as a neutral signal.
 Known limits, stated plainly:
 - True exchange netflow needs a keyed provider (Whale Alert/Glassnode). The
   current on-chain reader sees proxies, and its prompt says so.
-- Reddit will 429 this IP for a while after heavy use. The agent reports
-  `DEGRADED` and the cycle continues. Don't poll it on a short timer.
+- Reddit refuses scripted clients from most hosts — 403, 404 or 429 depending
+  on the hour, and its feed path is `/r/<sub>/new.rss` (the old `.rss`-with-a-slash
+  form 404s). It used to be the *only* social source, so a block turned the
+  reader into an error card; now attention and mood come from sources that
+  answer, and the prompt states plainly which one was missing so the reader
+  cannot describe posts it never saw.
 - Agent verdicts are graded on price direction over the stated horizon. That is
   a coarse measure of a nuanced claim, and coarse honesty beats fine narrative.
 
@@ -610,7 +614,9 @@ python3 wand.py keys            # generated from the code, always current
 | Binance Futures | none | funding, positioning, open interest, taker pressure |
 | Kraken | none | fallback candles |
 | Crypto news RSS (4 feeds) | none | headlines for the news reader |
-| Reddit | none | post volume + titles (rate-limited; often DEGRADED) |
+| CoinGecko trending | none | whether the ticker is in the crowd's top searches |
+| alternative.me | none | Fear & Greed index — crowd mood, market-wide |
+| Reddit | none | post volume + titles when it answers (it usually refuses bots) |
 | On-chain proxies | none | mempool, stablecoin supply, market-cap flows |
 | Whale Alert / Glassnode | not wired | would replace the on-chain proxies with real netflow |
 | Longer history | not wired | would let backtests span years, not ~12 days |
@@ -631,7 +637,7 @@ behind a human tier change.
 |---|---|---|
 | **DeepSeek** | Settings → paste `sk-…` → Save → Test connection | BYOK. Enables the real agents and vision. Stored in `data/settings.json`, mode `0600`. |
 | **Models** | Settings → **Fetch models** → pick from the dropdown | The list comes from `GET /models`, never from a hardcoded guess. |
-| **Market data** | nothing to connect | Coinbase candles, Binance derivatives, RSS, Reddit, on-chain — all public, no keys |
+| **Market data** | nothing to connect | Coinbase candles, Binance derivatives, RSS, on-chain, CoinGecko trending, Fear & Greed — all public, no keys |
 | **Broker** | not available | there is no live broker in this build; paper only |
 
 **Model fetching is real, not cosmetic.** Pressing *Fetch models* calls

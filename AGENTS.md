@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 447 tests
+python3 -m unittest discover -s tests -v  # 458 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -68,7 +68,11 @@ These were each learned by breaking them. Do not "improve" them away.
 - **Never trust a silent `str.replace`.** Twice an edit did nothing because the
   indentation or spacing differed, and the result shipped (a UI that threw on
   every refresh; a README claiming 179 tests). Verify with a test or a grep
-  after editing, not by assuming the edit applied.
+  after editing, not by assuming the edit applied. The same applies to an edit
+  that was *asserted but never written*: two doc edits in this project built the
+  replacement, asserted the anchor matched, then wrote a different variable — the
+  prose silently vanished while the script printed success. Grep for the new text
+  afterwards; a passing assert is not a write.
 - **Never show a replay without its age, and never hide work in progress.** The
   research panel renders the last cycle out of the ledger, so it is full the
   instant the page loads — which looks exactly like a fabricated or
@@ -84,6 +88,22 @@ These were each learned by breaking them. Do not "improve" them away.
   loop, so autopilot, audit, storage and the feed all looked dead while the
   header still updated. Every panel now renders inside its own guard, and
   `tests/test_ui_runtime.py` executes the real JS against a stub DOM.
+- **Never score a reader on a raw hit rate.** Over the graded sample 76% of 24h
+  windows fell and every reader leaned bearish, so "always bearish" scored 76%
+  for free. Two readers sat *below* that baseline while carrying influence
+  0.62/0.60, and `charts` scored 88% on 26 claims and got 0.96. Real samples are
+  also clustered: 575 grades sat on 31 distinct price paths. `skill = hit rate −
+  base rate for the direction called`, counted in distinct paths, is what drives
+  influence (`research_loop.agent_track_record`, used by both the synthesizer
+  and `reflect` — do not fork this arithmetic again; it was forked once and the
+  two copies drifted).
+- **Coverage is part of the evidence.** Every `Source` declares its providers and
+  every verdict carries the fraction that answered. `synthesize` shrinks the
+  evidence by it, charges the denominator for readers that never reported, and
+  raises the veto bar for thin channels. Before this, a dead source dropped out
+  of the average and the survivors renormalised to 100% — the decision changed
+  without getting any weaker. The operator caught that by eye;
+  `tests/test_coverage.py` now catches it by machine.
 
 ## Where things live
 
@@ -107,7 +127,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 447 tests, 0 audit gaps, 23 audit passes.
+- 458 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -122,6 +142,12 @@ These were each learned by breaking them. Do not "improve" them away.
   missing, so a reader cannot describe posts it never saw. Do not make any
   single external source load-bearing again — that is how one 404 greyed out a
   whole reader.
+- **No reader has demonstrated skill.** Against a per-horizon base rate on the
+  real ledger: `charts` +14.8pp on 12 independent windows (not significant),
+  `onchain` +4.8pp, `social` +9.5pp, `derivatives` −13.5pp, `news` −13.2pp.
+  Every influence sits in 0.38–0.50. The loop now measures honestly; it has not
+  yet found anything worth trusting. That is the real blocker behind the gate's
+  zero passes, and no amount of extra model calls substitutes for it.
 - The trend forecaster reports **no skill** on real SOL data (50.1% vs 50.9%
   base rate, Brier worse). Do not "improve" it by weakening the baseline: the
   first version compared against a hard 0/1 prediction and claimed an edge it

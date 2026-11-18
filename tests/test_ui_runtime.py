@@ -89,6 +89,10 @@ const calls = [
   ["renderAgents", () => renderAgents(research)],
   ["renderAgents stub", () => renderAgents({stub: true, agents: []})],
   ["renderAgents empty", () => renderAgents(null)],
+  ["renderAgents aged", () => renderAgents(research, {server_time: "2026-11-16T10:00:00Z",
+                                                       autopilot: {interval: 900}})],
+  ["renderAgents inflight", () => renderAgents(research, {server_time: "2026-11-16T07:03:00Z",
+                                                          research_inflight: {age_seconds: 12}})],
   ["renderDesk", () => renderDesk(state.desk)],
   ["renderAudit", () => renderAudit(state.audit)],
   ["renderAudit empty", () => renderAudit({})],
@@ -110,6 +114,38 @@ for (const [name, fn] of calls) {
   try { fn(); }
   catch (e) { failed++; console.log("RENDER FAILED [" + name + "]: " + e.message); }
 }
+// Freshness has to be stated, not implied: a four-hour-old reading and a
+// one-second-old one rendered identically, which is why the panel felt faked.
+function check(name, cond, detail) {
+  if (!cond) { failed++; console.log("ASSERT FAILED [" + name + "]: " + detail); }
+}
+const staleState = {server_time: "2026-11-16T10:00:00Z", autopilot: {interval: 900}};
+renderAgents(research, staleState);
+const tsEl = document.getElementById("researchTs");
+check("age is shown", /researched.*ago/.test(tsEl.textContent), tsEl.textContent);
+check("age has an absolute title", !!tsEl.title, "empty title");
+const staleHtml = document.getElementById("agents").innerHTML;
+check("stale reading is flagged", /stale reading/i.test(staleHtml), staleHtml.slice(0, 120));
+check("stale note names the time", /recorded, at/i.test(staleHtml), staleHtml.slice(0, 200));
+
+renderAgents(research, {server_time: "2026-11-16T07:03:00Z", autopilot: {interval: 900}});
+check("fresh reading has no stale banner",
+      !/stale reading/i.test(document.getElementById("agents").innerHTML), "banner on fresh");
+check("fresh age reads in minutes",
+      /researched 3 min ago/.test(document.getElementById("researchTs").textContent),
+      document.getElementById("researchTs").textContent);
+
+renderAgents(research, {server_time: "2026-11-16T07:03:00Z",
+                        research_inflight: {age_seconds: 12}});
+check("a running cycle is visible",
+      /researching/i.test(document.getElementById("decision").innerHTML),
+      document.getElementById("decision").innerHTML);
+check("a running cycle suppresses the stale banner",
+      !/stale reading/i.test(document.getElementById("agents").innerHTML), "banner during run");
+check("a running cycle says so in the header",
+      /running now/.test(document.getElementById("researchTs").textContent),
+      document.getElementById("researchTs").textContent);
+
 if (failed) process.exit(1);
 console.log("all panels rendered: " + calls.length);
 """

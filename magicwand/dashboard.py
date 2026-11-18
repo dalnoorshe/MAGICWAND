@@ -35,6 +35,7 @@ from .config import Config
 from .gatekeeper import TIER_NAMES, Policy, RiskTier
 from .ledger import Ledger, scorecard
 from .reflect import PolicyStore, reflect_and_persist
+from .research_loop import read_inflight
 from .settings_store import (SettingsError, SettingsStore, load_models_cache,
                              resolve_key, save_models_cache)
 
@@ -211,6 +212,10 @@ def build_state(root: Path, cfg: Config, force_offline: bool = False) -> dict:
             "recent_trades": desk_trades[-12:],
         },
         "research": last_research,
+        # Whether a cycle is running right now. Without this the panel cannot
+        # distinguish "finished 4 minutes ago" from "working this second", so
+        # it silently replays the previous cycle and looks frozen.
+        "research_inflight": read_inflight(root),
         "chart": _latest_chart(data),
         "proposal": last_proposal,
         "proposals": proposals,

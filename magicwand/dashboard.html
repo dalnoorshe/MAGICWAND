@@ -468,19 +468,57 @@ function drawChart(series) {
     <text x="${pad}" y="${H - 2}" fill="#5c6577" font-size="10">${min.toFixed(2)}</text>`;
 }
 
-function renderAgents(research) {
+function ago(seconds) {
+  if (seconds == null || !isFinite(seconds)) return "";
+  if (seconds < 90) return Math.round(seconds) + " s ago";
+  if (seconds < 5400) return Math.round(seconds / 60) + " min ago";
+  if (seconds < 172800) return (seconds / 3600).toFixed(1) + " h ago";
+  return Math.round(seconds / 86400) + " d ago";
+}
+
+// The panel replays the LAST recorded cycle out of the ledger, so it is full
+// the instant the page loads. That looked like the research was faked or
+// instantaneous; it was neither, the freshness was simply never stated.
+// So: always say how old the reading is, and say plainly when it is stale.
+function renderAgents(research, state) {
   const box = $("agents");
-  if (!research) { box.innerHTML = '<div class="empty">no research cycle recorded yet</div>'; return; }
-  $("researchTs").textContent = research.ts ? new Date(research.ts).toLocaleString() : "";
+  const st = state || {};
+  if (!research) {
+    $("researchTs").textContent = "";
+    box.innerHTML = '<div class="empty">no research cycle recorded yet</div>';
+    return;
+  }
+  const ts = research.ts ? new Date(research.ts) : null;
+  const nowS = st.server_time ? new Date(st.server_time) : null;
+  const ageS = (ts && nowS) ? Math.max(0, (nowS - ts) / 1000) : null;
+  const interval = (st.autopilot && st.autopilot.interval) || 300;
+  const staleAfter = Math.max(900, interval * 2.5);
+  const flight = st.research_inflight;
+  $("researchTs").textContent = !ts ? ""
+    : (flight ? "cycle running now"
+              : (ageS == null ? "researched" : "researched " + ago(ageS)));
+  $("researchTs").title = ts ? ts.toLocaleString() : "";
+  $("researchTs").className = ts && !flight && ageS != null && ageS > staleAfter
+    ? "dimmer bad" : "dimmer";
+
   const dec = research.decision || "neutral";
   $("decision").innerHTML = (research.stub ? '<span class="badge b-warn">offline stub</span> ' : "") +
+    (flight ? `<span class="badge b-good">researching… ${ago(flight.age_seconds || 0)}</span> ` : "") +
     `decision <b class="${dec === "veto" ? "bad" : dec === "support" ? "good" : "dim"}">${esc(dec.toUpperCase())}</b>` +
     ` · evidence <span class="mono">${(research.evidence_score ?? 0).toFixed(2)}</span>` +
     ` · readers <span class="dim">${esc(research.summary || "")}</span>`;
   const agents = research.agents || [];
   const declined = research.single_source_declined || [];
+  const staleNote = (ts && !flight && ageS != null && ageS > staleAfter)
+    ? `<div class="agent err" style="border-left-color:#ffb020;margin-bottom:8px">
+         <div class="row"><b>stale reading</b><span class="badge b-warn">nothing ran for ${esc(ago(ageS))}</span></div>
+         <div class="thesis">This is the last cycle recorded, at ${esc(ts.toLocaleString())}.
+           The readers have not looked at the market since — start the autopilot, or press
+           Run tick, before treating this as current.</div>
+       </div>`
+    : "";
   if (research.stub) {
-    box.innerHTML = `<div class="agent err" style="border-left-color:#ffb020">
+    box.innerHTML = staleNote + `<div class="agent err" style="border-left-color:#ffb020">
       <div class="row"><b>OFFLINE STUB — no real analysis</b>
         <span class="badge b-warn">placeholders</span></div>
       <div class="thesis">These readers are the deterministic offline model: it
@@ -494,7 +532,7 @@ function renderAgents(research) {
   const declinedNote = declined.length
     ? `<div class="dim" style="margin:2px 0 8px">vetoes declined (single source, confidence below 0.80): ${declined.map(esc).join(", ")}</div>`
     : "";
-  box.innerHTML = declinedNote + agents.map(a => {
+  box.innerHTML = staleNote + declinedNote + agents.map(a => {
     if (a.error) {
       return `<div class="agent err"><div class="row"><b>${esc(a.agent)}</b>
         <span class="badge b-warn">degraded</span></div>
@@ -1163,7 +1201,7 @@ async function refresh() {
     $("tier").className = "badge " + (s.policy.tier === 0 ? "b-dim" : s.policy.tier >= 3 ? "b-bad" : "b-warn");
     $("chain").textContent = s.ledger.ok ? `chain ok · ${s.ledger.entries}` : "CHAIN BROKEN";
     $("chain").className = "badge " + (s.ledger.ok ? "b-good" : "b-bad");
-    safe("agents", () => renderAgents(s.research))
+    safe("agents", () => renderAgents(s.research, s))
     safe("desk", () => renderDesk(s.desk))
     safe("chart", () => drawChart(s.equity_series))
     safe("reflection", () => renderReflection(s.reflection, s.memory || {}))

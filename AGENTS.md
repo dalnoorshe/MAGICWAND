@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 402 tests
+python3 -m unittest discover -s tests -v  # 412 tests
 ```
 
 `wand audit` runs adversarial scenarios against the real code in throwaway
@@ -65,6 +65,14 @@ These were each learned by breaking them. Do not "improve" them away.
   indentation or spacing differed, and the result shipped (a UI that threw on
   every refresh; a README claiming 179 tests). Verify with a test or a grep
   after editing, not by assuming the edit applied.
+- **Never show a replay without its age.** The research panel renders the last
+  cycle out of the ledger, so it is full the instant the page loads — which
+  looks exactly like a fabricated or instantaneous result. Every replayed
+  reading now carries "researched 5 min ago", a stale warning past 2.5 tick
+  intervals, and a "researching…" badge while `data/research-inflight.json`
+  says a cycle is running (cleared in a `finally`, ignored if corrupt or
+  older than 15 min). A panel that cannot say when it last looked is not
+  trustworthy, however correct its numbers are.
 - **A UI bug is not cosmetic.** One undefined variable aborted the whole refresh
   loop, so autopilot, audit, storage and the feed all looked dead while the
   header still updated. Every panel now renders inside its own guard, and
@@ -92,7 +100,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 402 tests, 0 audit gaps, 23 audit passes.
+- 412 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5

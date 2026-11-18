@@ -156,9 +156,74 @@ class ResearchCycle:
         }
 
 
-def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
-              atr: float, symbol: Optional[str] = None,
-              subreddit: str = "solana", dcfg: Optional[DeskConfig] = None,
+INFLIGHT_NAME = "research-inflight.json"
+# A marker older than this means the process died mid-cycle, not that a cycle
+# is still running. Reporting a dead run as "researching now" would be a lie.
+INFLIGHT_MAX_AGE = 900.0
+
+
+def inflight_path(root: str | Path) -> Path:
+    return Path(root) / "data" / INFLIGHT_NAME
+
+
+def mark_inflight(root: str | Path, symbol: str = "",
+                  agents: Optional[list[str]] = None,
+                  now: Optional[datetime] = None) -> None:
+    """Say out loud that a research cycle is running, on disk.
+
+    The console cannot otherwise tell "the last cycle finished 4 minutes ago"
+    from "one is running right now", so the panel looked frozen either way.
+    Written atomically and failure is ignored: a progress marker must never be
+    able to break the research it is describing.
+    """
+    p = inflight_path(root)
+    payload = {"started_at": iso(now or utcnow()), "symbol": symbol,
+               "agents": list(agents or [])}
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(p)
+    except OSError:
+        pass
+
+
+def clear_inflight(root: str | Path) -> None:
+    try:
+        inflight_path(root).unlink()
+    except OSError:
+        pass
+
+
+def read_inflight(root: str | Path, now: Optional[datetime] = None,
+                  max_age: float = INFLIGHT_MAX_AGE) -> Optional[dict]:
+    """The running cycle, or None.
+
+    Fail soft in every direction — absent, corrupt, unreadable or stale all
+    mean "not running". A corrupt file must not raise inside build_state and
+    take the whole console down with it.
+    """
+    p = inflight_path(root)
+    try:
+        raw = json.loads(p.read_text())
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    started = raw.get("started_at")
+    try:
+        age = ((now or utcnow()) - parse_iso(str(started))).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    if not (age >= 0 and age <= max_age):
+        return None
+    return {"started_at": started, "age_seconds": round(age, 1),
+            "symbol": raw.get("symbol", ""), "agents": raw.get("agents", [])}
+
+
+def _run_cycle_body(cfg: Config, client: DeepSeekClient, price: float,
+                    atr: float, symbol: Optional[str] = None,
+                    subreddit: str = "solana", dcfg: Optional[DeskConfig] = None,
               root: str | Path = ".", snapshot: Optional[research_mod.MarketSnapshot] = None,
               agents: Optional[list[str]] = None,
               now: Optional[datetime] = None,
@@ -287,3 +352,30 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
         desk_outcome=desk_outcome,
         track_record=agent_track_record(ledger),
     )
+
+
+def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
+              atr: float, symbol: Optional[str] = None,
+              subreddit: str = "solana", dcfg: Optional[DeskConfig] = None,
+              root: str | Path = ".", snapshot: Optional[research_mod.MarketSnapshot] = None,
+              agents: Optional[list[str]] = None,
+              now: Optional[datetime] = None,
+              ledger: Optional[Ledger] = None,
+              vision: bool = False,
+              bars: Optional[list] = None,
+              chart_title: str = "",
+              position: Optional[dict] = None) -> ResearchCycle:
+    """Run one research cycle, with an on-disk "I am running" marker.
+
+    The marker exists so the console can show a cycle in progress instead of
+    silently replaying the previous one, and it is cleared in a `finally` so a
+    crash cannot leave the panel claiming work that stopped.
+    """
+    mark_inflight(root, symbol=symbol or cfg.market.symbol,
+                  agents=agents, now=now)
+    try:
+        return _run_cycle_body(
+            cfg, client, price, atr, symbol, subreddit, dcfg, root, snapshot,
+            agents, now, ledger, vision, bars, chart_title, position)
+    finally:
+        clear_inflight(root)

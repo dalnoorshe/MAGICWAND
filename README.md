@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 424 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 431 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -909,6 +909,33 @@ is now the base rate, and `beats_base` requires better probabilities **and**
 better-than-coin-flip direction. See `docs/PLAN.md` §2c for what would give it a
 real chance — better features (funding, open interest, taker imbalance,
 cross-asset) and better labels (triple-barrier), not a bigger model.
+
+## Is a source broken, or is the internet saying no?
+
+```bash
+python3 wand.py sources          # probes every feed, one line each
+python3 wand.py sources --json
+```
+
+```
+sources — SOL-USD (6/7 answered)
+  ok    candles              9 bars, last 2026-11-18 18:00Z
+  ok    derivatives          funding -0.00122%, L/S 3.5725, OI chg -1.708%
+  ok    news                 30 headlines
+  FAIL  reddit               r/solana: HTTP 404 from .../new.rss
+  ok    coingecko trending   SOL trending at rank 10 of 15
+  ok    fear & greed         11/100 (Extreme Fear)
+```
+
+This exists because the worst data failure is the quiet one: a feed that stopped
+answering weeks ago and now renders as a permanent red card nobody investigates.
+The doctor tells you which it is — **a parser bug or a refusal** — and keeps
+going when everything is down, because that is exactly when you run it.
+
+Run it on the machine that will actually run the bot. Reddit blocks whole
+networks (429, or `403 blocked by network security`); a home connection usually
+answers where a datacenter does not, and the social reader uses Reddit whenever
+it can while still reporting attention and mood when it cannot.
 
 ## Self-audit: what breaks when you push on it
 

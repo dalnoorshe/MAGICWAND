@@ -11,8 +11,12 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 424 tests
+python3 -m unittest discover -s tests -v  # 431 tests
 ```
+
+When a panel says a source is unavailable, run `python3 wand.py sources` before
+touching any parsing code: it separates "our code is broken" from "the internet
+said no". Reddit blocks whole networks, so a FAIL there is usually the network.
 
 `wand audit` runs adversarial scenarios against the real code in throwaway
 directories. **It is part of the routine**: run it after touching the tick loop,
@@ -103,7 +107,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 424 tests, 0 audit gaps, 23 audit passes.
+- 431 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5

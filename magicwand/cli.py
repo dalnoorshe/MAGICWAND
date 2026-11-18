@@ -32,6 +32,7 @@ from . import integrations as integrations_mod
 from . import service as service_mod
 from . import storage as storage_mod
 from .dashboard import serve as serve_dashboard
+from . import doctor as doctor_mod
 from .desk import AgentDesk, DeskConfig
 from .ledger import Ledger, scorecard
 from .llm import DeepSeekClient, fake_canned, fake_proposal
@@ -388,6 +389,18 @@ def cmd_storage(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_sources(cfg: Config, args) -> int:
+    """Probe every data source and report what actually came back."""
+    report = doctor_mod.run(cfg, symbol=args.symbol or cfg.market.symbol)
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2))
+    else:
+        print()
+        print(doctor_mod.format_report(report))
+        print()
+    return 0 if report["all_ok"] else 1
+
+
 def cmd_compose(cfg: Config, args) -> int:
     """Have the model compose a strategy, then judge it with the same gate."""
     from .llm import DeepSeekClient, fake_composition, fake_canned
@@ -637,6 +650,12 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--live", action="store_true")
     sc.add_argument("--lines", type=int, default=30)
     sc.set_defaults(fn=cmd_service)
+
+    src = sub.add_parser("sources",
+                         help="probe every data source and say what came back")
+    src.add_argument("--symbol", default="", help="market to check (default: config)")
+    src.add_argument("--json", action="store_true")
+    src.set_defaults(fn=cmd_sources)
 
     stg = sub.add_parser("storage", help="local data: size, prune, backup, restore")
     stg.add_argument("--prune", action="store_true", help="delete old snapshots")

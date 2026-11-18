@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, field, asdict
-from typing import Optional
+from typing import Callable, Optional
 
 from .jsonfix import parse_json_lenient
 from .llm import BudgetExceeded, DeepSeekClient, LLMError
@@ -296,18 +296,40 @@ def run_agent(name: str, snap: MarketSnapshot, client: DeepSeekClient,
     return v
 
 
+def agent_names() -> list[str]:
+    """Every text reader, in the order they run. Used to draw the live roster."""
+    return list(_AGENT_SPEC)
+
+
 def run_all(snap: MarketSnapshot, client: DeepSeekClient,
-            agents: Optional[list[str]] = None) -> list[AgentVerdict]:
+            agents: Optional[list[str]] = None, *,
+            on_plan: Optional[Callable[[list[str]], None]] = None,
+            on_start: Optional[Callable[[str], None]] = None,
+            on_done: Optional[Callable[[AgentVerdict], None]] = None
+            ) -> list[AgentVerdict]:
+    """Read the market with every agent.
+
+    The three callbacks exist so a long cycle can say what it is doing while it
+    does it. They are observation only: nothing they do can change a verdict,
+    and an agent that fails is recorded exactly as before.
+    """
     names = agents or list(_AGENT_SPEC)
+    if on_plan is not None:
+        on_plan(list(names))
     out: list[AgentVerdict] = []
     for n in names:
+        if on_start is not None:
+            on_start(n)
         # Only run an agent if its source is actually present and healthy.
         if n in snap.sources and not snap.ok(n):
-            out.append(AgentVerdict(
+            v = AgentVerdict(
                 agent=n, error=f"source {n!r} unavailable: "
-                               f"{snap.sources[n].error or 'unknown'}"))
-            continue
-        out.append(run_agent(n, snap, client))
+                               f"{snap.sources[n].error or 'unknown'}")
+        else:
+            v = run_agent(n, snap, client)
+        out.append(v)
+        if on_done is not None:
+            on_done(v)
     return out
 
 

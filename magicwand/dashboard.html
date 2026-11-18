@@ -79,6 +79,10 @@
   .agent .thesis { color: var(--dim); margin-top: 3px; font-size: 12px; }
   .bar { height: 4px; background: #1b202b; border-radius: 2px; overflow: hidden; margin-top: 5px; }
   .bar i { display: block; height: 100%; background: var(--accent); }
+  /* A reader that is being read right now: alive, not a spinner that
+     pretends progress it does not have. */
+  @keyframes mwpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  .bar i.pulse { animation: mwpulse 1.2s ease-in-out infinite; }
   .feed { max-height: 300px; overflow: auto; font-size: 12px; }
   .feed div { padding: 3px 0; border-bottom: 1px solid #171b24; }
   .k { color: var(--accent); }
@@ -480,36 +484,131 @@ function ago(seconds) {
 // the instant the page loads. That looked like the research was faked or
 // instantaneous; it was neither, the freshness was simply never stated.
 // So: always say how old the reading is, and say plainly when it is stale.
+function clock(seconds) {
+  const total = Math.max(0, Math.round(seconds || 0));
+  const m = Math.floor(total / 60), sec = total % 60;
+  return m + ":" + String(sec).padStart(2, "0");
+}
+
+// While a cycle runs, the elapsed time is measured locally from the age the
+// server reported at render time, so it counts up smoothly without trusting
+// this machine's clock to agree with the server's.
+let FLIGHT = null, FLIGHT_AT = 0;
+function flightSeconds() {
+  if (!FLIGHT) return 0;
+  return (Number(FLIGHT.age_seconds) || 0) + (Date.now() - FLIGHT_AT) / 1000;
+}
+
+function agentCard(a) {
+  if (a.error) {
+    return `<div class="agent err"><div class="row"><b>${esc(a.agent)}</b>
+      <span class="badge b-warn">degraded</span></div>
+      <div class="thesis">${esc(a.error)}</div></div>`;
+  }
+  const conf = Number(a.confidence || 0);
+  const corr = Number(a.corroboration || 0);
+  const corrBadge = corr === 0 ? ""
+    : corr === 1 ? '<span class="badge b-warn" title="one independent source — a single-source veto needs 0.80 confidence">1 source</span>'
+    : `<span class="badge b-dim" title="independent sources backing this">${corr} sources</span>`;
+  return `<div class="agent ${esc(a.stance)}">
+    <div class="row"><b>${esc(a.agent)}</b>
+      <span>${corrBadge}<span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
+      <span class="dim mono"> conf ${conf.toFixed(2)} · ev ${Number(a.evidence_score||0).toFixed(2)}</span></span></div>
+    <div class="thesis">${esc(a.thesis || "")}</div>
+    <div class="bar"><i style="width:${Math.round(conf*100)}%"></i></div>
+  </div>`;
+}
+
+// A reader that has not come back yet. Deliberately not a fake verdict: it says
+// what it is (waiting, or being read right now) and nothing else.
+function skeletonCard(name, active) {
+  return `<div class="agent ${active ? "neutral" : ""}" style="opacity:${active ? 1 : 0.45}">
+    <div class="row"><b>${esc(name)}</b>
+      <span class="badge ${active ? "b-good" : "b-dim"}">${active ? "reading now…" : "queued"}</span></div>
+    <div class="bar"><i class="${active ? "pulse" : ""}" style="width:${active ? "100%" : "0%"}"></i></div>
+  </div>`;
+}
+
+// The panel replays the LAST recorded cycle out of the ledger, so it is full
+// the instant the page loads. That looked like the research was faked or
+// instantaneous; it was neither — the freshness was never stated, and a cycle
+// in progress was invisible. So: show the age, show staleness, and when a
+// cycle is actually running, show the readers filling in one at a time.
 function renderAgents(research, state) {
   const box = $("agents");
   const st = state || {};
-  if (!research) {
-    $("researchTs").textContent = "";
-    box.innerHTML = '<div class="empty">no research cycle recorded yet</div>';
-    return;
-  }
-  const ts = research.ts ? new Date(research.ts) : null;
+  const flight = st.research_inflight || null;
+  FLIGHT = flight;
+  FLIGHT_AT = Date.now();
+
+  const ts = research && research.ts ? new Date(research.ts) : null;
   const nowS = st.server_time ? new Date(st.server_time) : null;
   const ageS = (ts && nowS) ? Math.max(0, (nowS - ts) / 1000) : null;
   const interval = (st.autopilot && st.autopilot.interval) || 300;
   const staleAfter = Math.max(900, interval * 2.5);
-  const flight = st.research_inflight;
-  $("researchTs").textContent = !ts ? ""
-    : (flight ? "cycle running now"
-              : (ageS == null ? "researched" : "researched " + ago(ageS)));
-  $("researchTs").title = ts ? ts.toLocaleString() : "";
-  $("researchTs").className = ts && !flight && ageS != null && ageS > staleAfter
+  const ageText = ageS == null ? "" : "researched " + ago(ageS);
+
+  $("researchTs").textContent = flight
+    ? (research ? ageText + " · new cycle running" : "cycle running")
+    : (research ? (ageText || "researched") : "");
+  $("researchTs").title = ts ? "last complete cycle: " + ts.toLocaleString() : "";
+  $("researchTs").className = (ts && !flight && ageS != null && ageS > staleAfter)
     ? "dimmer bad" : "dimmer";
 
+  // ---- a cycle is running right now: show it ----
+  if (flight && flight.plan && flight.plan.length) {
+    const done = flight.done || [];
+    const byName = {};
+    done.forEach(d => { byName[d.agent] = d; });
+    const phase = flight.phase === "chart" ? "reading the chart"
+      : flight.phase === "synthesis" ? "weighing the verdicts"
+      : (flight.phase === "snapshot" || flight.phase === "starting")
+        ? "collecting market data"
+      : "reading the market";
+    const total = flight.plan.length;
+    const passed = done.length;
+    $("decision").innerHTML =
+      `<span class="badge b-good">${esc(phase)}…</span> ` +
+      `<span class="mono" id="flightClock">${clock(flightSeconds())}</span>` +
+      ` · <span class="dim">${passed} of ${total} readers in</span>` +
+      (flight.current && !byName[flight.current]
+        ? ` · <span class="dim">${esc(flight.current)} next</span>` : "") +
+      (research ? ` · <span class="dim">last complete cycle ${esc(ago(ageS))}: <b>${esc((research.decision || "").toUpperCase())}</b></span>` : "");
+
+    const cards = flight.plan.map(name => {
+      if (byName[name]) return agentCard(byName[name]);
+      if ((flight.failing || []).includes(name)) {
+        return `<div class="agent err"><div class="row"><b>${esc(name)}</b>
+          <span class="badge b-warn">failed this cycle</span></div>
+          <div class="thesis">The chart reader did not come back; the text readers carry the cycle.</div></div>`;
+      }
+      return skeletonCard(name, flight.current === name);
+    }).join("");
+    const tail = research
+      ? `<div class="dim" style="margin-top:10px">Still showing nothing from the previous
+           cycle above — it is replaced as soon as this one lands, which the ledger
+           records as a new <span class="mono">research</span> entry.</div>`
+      : "";
+    box.innerHTML = cards + tail;
+    return;
+  }
+
+  // ---- no cycle running: the last complete reading, with its age ----
+  if (!research) {
+    box.innerHTML = '<div class="empty">no research cycle recorded yet</div>';
+    return;
+  }
   const dec = research.decision || "neutral";
+  // A marker with no plan (an older marker, or one written before the readers
+  // were listed) still has to say that something is running.
   $("decision").innerHTML = (research.stub ? '<span class="badge b-warn">offline stub</span> ' : "") +
-    (flight ? `<span class="badge b-good">researching… ${ago(flight.age_seconds || 0)}</span> ` : "") +
+    (flight ? '<span class="badge b-good">cycle running…</span> ' : "") +
     `decision <b class="${dec === "veto" ? "bad" : dec === "support" ? "good" : "dim"}">${esc(dec.toUpperCase())}</b>` +
     ` · evidence <span class="mono">${(research.evidence_score ?? 0).toFixed(2)}</span>` +
     ` · readers <span class="dim">${esc(research.summary || "")}</span>`;
   const agents = research.agents || [];
   const declined = research.single_source_declined || [];
-  const staleNote = (ts && !flight && ageS != null && ageS > staleAfter)
+  const staleNote = (ts && ageS != null && ageS > staleAfter)
     ? `<div class="agent err" style="border-left-color:#ffb020;margin-bottom:8px">
          <div class="row"><b>stale reading</b><span class="badge b-warn">nothing ran for ${esc(ago(ageS))}</span></div>
          <div class="thesis">This is the last cycle recorded, at ${esc(ts.toLocaleString())}.
@@ -532,25 +631,32 @@ function renderAgents(research, state) {
   const declinedNote = declined.length
     ? `<div class="dim" style="margin:2px 0 8px">vetoes declined (single source, confidence below 0.80): ${declined.map(esc).join(", ")}</div>`
     : "";
-  box.innerHTML = staleNote + declinedNote + agents.map(a => {
-    if (a.error) {
-      return `<div class="agent err"><div class="row"><b>${esc(a.agent)}</b>
-        <span class="badge b-warn">degraded</span></div>
-        <div class="thesis">${esc(a.error)}</div></div>`;
-    }
-    const conf = Number(a.confidence || 0);
-    const corr = Number(a.corroboration || 0);
-    const corrBadge = corr === 0 ? ""
-      : corr === 1 ? '<span class="badge b-warn" title="one independent source — a single-source veto needs 0.80 confidence">1 source</span>'
-      : `<span class="badge b-dim" title="independent sources backing this">${corr} sources</span>`;
-    return `<div class="agent ${esc(a.stance)}">
-      <div class="row"><b>${esc(a.agent)}</b>
-        <span>${corrBadge}<span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
-        <span class="dim mono"> conf ${conf.toFixed(2)} · ev ${Number(a.evidence_score||0).toFixed(2)}</span></span></div>
-      <div class="thesis">${esc(a.thesis || "")}</div>
-      <div class="bar"><i style="width:${Math.round(conf*100)}%"></i></div>
-    </div>`;
-  }).join("");
+  box.innerHTML = staleNote + declinedNote + agents.map(agentCard).join("");
+}
+
+// Keep the running clock ticking between polls (the page polls every 5s).
+let FOLLOW_UNTIL = 0;
+function followFlight(seconds) { FOLLOW_UNTIL = Date.now() + (seconds || 600) * 1000; }
+
+if (typeof setInterval === "function") {
+  setInterval(() => {
+    if (!FLIGHT) return;
+    const t = clock(flightSeconds());
+    const el = $("flightClock");
+    if (el) el.textContent = t;
+  }, 1000);
+
+  // While a cycle is in flight — or has just been asked for — read the panel
+  // faster than the rest of the page. Local files only, so this costs nothing;
+  // it stops by itself the moment the cycle lands.
+  setInterval(async () => {
+    if (!FLIGHT && Date.now() >= FOLLOW_UNTIL) return;
+    try {
+      const r = await fetch("/api/state", {cache: "no-store"});
+      const s2 = await r.json();
+      safe("agents", () => renderAgents(s2.research, s2));
+    } catch (e) { /* a dropped poll is not an error */ }
+  }, 1500);
 }
 
 function renderDesk(d) {
@@ -1222,9 +1328,13 @@ async function refresh() {
 
 $("btnTick").onclick = async () => {
   $("btnTick").disabled = true;
-  toast("running a tick…");
+  toast("tick started — the research panel fills in as each reader returns");
+  // Do not await the tick before showing anything: it takes a minute, and a
+  // minute of silence is what made the panel feel like it was not working.
+  const pending = post("/api/tick", {});
+  followFlight(900);
   try {
-    const r = await post("/api/tick", {});
+    const r = await pending;
     if (!r.ok) toast("tick failed: " + (r.error || "unknown"));
     else {
       const rep = r.report || {};

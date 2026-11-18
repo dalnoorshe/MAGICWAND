@@ -137,13 +137,35 @@ check("fresh age reads in minutes",
 
 renderAgents(research, {server_time: "2026-11-16T07:03:00Z",
                         research_inflight: {age_seconds: 12}});
+// A running cycle must paint itself: the reader that came back, the one being
+// read right now, and the ones still queued — never the previous cycle's
+// verdicts dressed up as this one's.
+renderAgents(research, {server_time: "2026-11-16T07:05:00Z",
+                        research_inflight: {
+                          started_at: "2026-11-16T07:04:44Z", age_seconds: 16,
+                          phase: "reading", current: "social",
+                          plan: ["news", "social", "onchain"],
+                          done: [{agent: "news", stance: "veto", confidence: 0.62,
+                                  evidence_score: -0.45, corroboration: 2,
+                                  thesis: "risk off now", error: ""}],
+                          failing: []}});
+const liveHtml = document.getElementById("agents").innerHTML;
+const liveDec = document.getElementById("decision").innerHTML;
+check("live view shows the returned reader", /risk off now/.test(liveHtml), liveHtml.slice(0, 200));
+check("live view shows the reader in flight", /reading now/.test(liveHtml), liveHtml.slice(0, 400));
+check("live view shows queued readers", /queued/.test(liveHtml), liveHtml.slice(0, 400));
+check("live view counts readers in", /1 of 3 readers in/.test(liveDec), liveDec);
+check("live view shows elapsed time", /0:1[6-9]/.test(liveDec), liveDec);
+check("live view keeps the last verdict visible", /last complete cycle/.test(liveDec), liveDec);
+check("live view draws no bar for a queued reader",
+      (liveHtml.match(/width:0%/g) || []).length === 1, liveHtml.slice(0, 400));
 check("a running cycle is visible",
-      /researching/i.test(document.getElementById("decision").innerHTML),
+      /cycle running|reading the market/i.test(document.getElementById("decision").innerHTML),
       document.getElementById("decision").innerHTML);
 check("a running cycle suppresses the stale banner",
       !/stale reading/i.test(document.getElementById("agents").innerHTML), "banner during run");
 check("a running cycle says so in the header",
-      /running now/.test(document.getElementById("researchTs").textContent),
+      /new cycle running/.test(document.getElementById("researchTs").textContent),
       document.getElementById("researchTs").textContent);
 
 if (failed) process.exit(1);

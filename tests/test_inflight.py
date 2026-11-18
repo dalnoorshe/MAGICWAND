@@ -121,3 +121,67 @@ class TestStateExposesInflight(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCycleReportsProgress(unittest.TestCase):
+    """A cycle must describe itself while it runs, not only when it lands."""
+
+    def _run(self, agents_list):
+        from magicwand import research as research_mod
+        from magicwand.llm import DeepSeekClient, fake_canned
+
+        seen: list[dict] = []
+        real = research_loop.update_inflight
+
+        def spy(root, **fields):
+            seen.append(dict(fields))
+            return real(root, **fields)
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            cfg = Config()
+            snap = research_mod.fixture_snapshot("SOL-USD", price=71.0)
+            research_loop.update_inflight = spy
+            try:
+                cycle = research_loop.run_cycle(
+                    cfg, DeepSeekClient(fake=fake_canned), price=71.0, atr=1.2,
+                    root=root, symbol="SOL-USD", snapshot=snap, vision=False,
+                    agents=agents_list)
+            finally:
+                research_loop.update_inflight = real
+            leftover = research_loop.read_inflight(root)
+        return seen, cycle, leftover
+
+    def test_roster_is_published_before_any_reader_finishes(self):
+        seen, _cycle, leftover = self._run(["news", "social"])
+        self.assertTrue(seen, "no progress was reported at all")
+        first = seen[0]
+        self.assertEqual(first.get("plan"), ["news", "social"])
+        self.assertIn(first.get("phase"), ("snapshot", "reading"))
+        self.assertEqual(first.get("done"), [])
+        self.assertIsNone(leftover, "the marker survived the cycle")
+
+    def test_each_reader_is_announced_then_recorded(self):
+        seen, cycle, _ = self._run(["news", "social"])
+        currents = [e["current"] for e in seen if e.get("current")]
+        self.assertIn("news", currents)
+        self.assertIn("social", currents)
+        # The last event that reports verdicts carries everyone who came back,
+        # in the order they were read.
+        reported = [e["done"] for e in seen if e.get("done")]
+        self.assertTrue(reported, "no verdict was ever reported as finished")
+        self.assertEqual([d["agent"] for d in reported[-1]],
+                         [v.agent for v in cycle.report.agents])
+        self.assertTrue(all(d["agent"] in {"news", "social"}
+                            for d in reported[-1]))
+
+    def test_a_finished_cycle_is_reported_as_synthesising(self):
+        seen, _cycle, _ = self._run(["news", "social"])
+        self.assertIn("synthesis", [e.get("phase") for e in seen])
+
+    def test_progress_carries_no_promises_about_unfinished_readers(self):
+        """A reader is listed only after it has a verdict."""
+        seen, _cycle, _ = self._run(["news", "social"])
+        for event in seen:
+            done = event.get("done") or []
+            self.assertTrue(all(d.get("agent") and "stance" in d for d in done))

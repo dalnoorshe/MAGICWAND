@@ -16,13 +16,15 @@ the desk can open a trade, and only inside its walls.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from . import research as research_mod
-from .agents import (AgentVerdict, ResearchReport, run_all, synthesize)
+from .agents import (AgentVerdict, ResearchReport, agent_names, run_all,
+                     synthesize)
 from .common import iso, parse_iso, utcnow
 from .config import Config
 from .desk import AgentDesk, DeskConfig
@@ -166,9 +168,30 @@ def inflight_path(root: str | Path) -> Path:
     return Path(root) / "data" / INFLIGHT_NAME
 
 
+def brief_verdict(v: AgentVerdict) -> dict:
+    """The parts of a verdict worth painting while the cycle is still running."""
+    def num(x: object) -> float:
+        try:
+            got = float(x)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return 0.0
+        return got if math.isfinite(got) else 0.0
+
+    return {
+        "agent": str(v.agent),
+        "stance": str(v.stance),
+        "confidence": round(num(v.confidence), 3),
+        "evidence_score": round(num(v.evidence_score), 3),
+        "corroboration": int(num(v.corroboration)),
+        "thesis": (v.thesis or "")[:280],
+        "error": (v.error or "")[:200],
+    }
+
+
 def mark_inflight(root: str | Path, symbol: str = "",
                   agents: Optional[list[str]] = None,
-                  now: Optional[datetime] = None) -> None:
+                  now: Optional[datetime] = None,
+                  plan: Optional[list[str]] = None) -> None:
     """Say out loud that a research cycle is running, on disk.
 
     The console cannot otherwise tell "the last cycle finished 4 minutes ago"
@@ -178,11 +201,36 @@ def mark_inflight(root: str | Path, symbol: str = "",
     """
     p = inflight_path(root)
     payload = {"started_at": iso(now or utcnow()), "symbol": symbol,
-               "agents": list(agents or [])}
+               "agents": list(agents or []), "plan": list(plan or []),
+               "phase": "starting", "current": "", "done": [], "failing": []}
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_name(p.name + ".tmp")
         tmp.write_text(json.dumps(payload))
+        tmp.replace(p)
+    except OSError:
+        pass
+
+
+def update_inflight(root: str | Path, **fields: Any) -> None:
+    """Merge progress into the marker, atomically. Never raises.
+
+    A cycle takes a minute of model calls; the console should be able to show
+    which reader is being read right now instead of a static "running" badge.
+    """
+    p = inflight_path(root)
+    try:
+        cur = json.loads(p.read_text())
+    except (OSError, ValueError):
+        cur = {}
+    if not isinstance(cur, dict):
+        cur = {}
+    cur.setdefault("started_at", iso(utcnow()))
+    cur.update(fields)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(cur))
         tmp.replace(p)
     except OSError:
         pass
@@ -217,21 +265,35 @@ def read_inflight(root: str | Path, now: Optional[datetime] = None,
         return None
     if not (age >= 0 and age <= max_age):
         return None
+    plan = raw.get("plan")
+    done = raw.get("done")
+    failure = raw.get("failing")
     return {"started_at": started, "age_seconds": round(age, 1),
-            "symbol": raw.get("symbol", ""), "agents": raw.get("agents", [])}
+            "symbol": raw.get("symbol", ""),
+            "agents": raw.get("agents", []),
+            "phase": str(raw.get("phase", "")),
+            "current": str(raw.get("current", "")),
+            "plan": [str(x) for x in plan] if isinstance(plan, list) else [],
+            "done": [d for d in done if isinstance(d, dict) and d.get("agent")]
+                    if isinstance(done, list) else [],
+            "failing": [str(x) for x in failure]
+                       if isinstance(failure, list) else []}
 
 
 def _run_cycle_body(cfg: Config, client: DeepSeekClient, price: float,
                     atr: float, symbol: Optional[str] = None,
                     subreddit: str = "solana", dcfg: Optional[DeskConfig] = None,
-              root: str | Path = ".", snapshot: Optional[research_mod.MarketSnapshot] = None,
-              agents: Optional[list[str]] = None,
-              now: Optional[datetime] = None,
-              ledger: Optional[Ledger] = None,
-              vision: bool = False,
-              bars: Optional[list] = None,
-              chart_title: str = "",
-              position: Optional[dict] = None) -> ResearchCycle:
+                    root: str | Path = ".",
+                    snapshot: Optional[research_mod.MarketSnapshot] = None,
+                    agents: Optional[list[str]] = None,
+                    now: Optional[datetime] = None,
+                    ledger: Optional[Ledger] = None,
+                    vision: bool = False,
+                    bars: Optional[list] = None,
+                    chart_title: str = "",
+                    position: Optional[dict] = None,
+                    progress: Optional[Callable[..., None]] = None
+                    ) -> ResearchCycle:
     root = Path(root)
     now = now or utcnow()
     symbol = symbol or cfg.market.symbol
@@ -240,19 +302,45 @@ def _run_cycle_body(cfg: Config, client: DeepSeekClient, price: float,
     ledger = ledger or Ledger(root / cfg.ledger.path)
     base = symbol.split("-")[0] if "-" in symbol else symbol
 
+    # Live progress, so the console can show a cycle happening instead of
+    # replaying the previous one. Observation only: nothing here can alter a
+    # verdict, and every callback is optional.
+    def note(**fields: Any) -> None:
+        if progress is not None:
+            progress(**fields)
+
+    finished: list[dict] = []
+
     if snapshot is None:
+        # Fetching the sources takes real time (RSS, exchange APIs); say so
+        # rather than looking stalled with an empty roster.
+        note(phase="snapshot", current="")
         snapshot = research_mod.build_snapshot(
             base, subreddit=subreddit, price=price,
             cache_dir=str(root) if cfg.market.exchange != "synthetic" else None)
 
     track = agent_track_record(ledger)
-    verdicts = run_all(snapshot, client, agents=agents)
+
+    def on_plan(names: list[str]) -> None:
+        note(phase="reading", current="", plan=list(names), done=[],
+             failing=[])
+
+    def on_start(name: str) -> None:
+        note(phase="reading", current=name)
+
+    def on_done(v: AgentVerdict) -> None:
+        finished.append(brief_verdict(v))
+        note(phase="reading", current="", done=list(finished))
+
+    verdicts = run_all(snapshot, client, agents=agents, on_plan=on_plan,
+                       on_start=on_start, on_done=on_done)
 
     # The chart reader sees a picture of the same series. It fails soft: if the
     # model cannot see (offline fake, no key), the verdict is degraded and the
     # text readers carry on.
     chart_verdict = None
     if vision and bars:
+        note(phase="chart", current="charts")
         chart_verdict = read_chart(
             bars, client, title=chart_title or f"{symbol} {cfg.market.timeframe}",
             symbol=symbol, save_dir=root / "data" / "charts",
@@ -260,9 +348,13 @@ def _run_cycle_body(cfg: Config, client: DeepSeekClient, price: float,
         if chart_verdict.error:
             ledger.append("vision_degraded",
                           {"agent": "charts", "error": chart_verdict.error[:300]})
+            note(phase="chart", current="", failing=["charts"])
         else:
             verdicts.append(chart_verdict)
+            finished.append(brief_verdict(chart_verdict))
+            note(phase="chart", current="", done=list(finished))
 
+    note(phase="synthesis", current="")
     report = synthesize(verdicts, symbol, snapshot.ts, track=track)
     report.chart = chart_verdict
     report.cost_usd = round(client.usage.cost_usd, 6)
@@ -371,11 +463,15 @@ def run_cycle(cfg: Config, client: DeepSeekClient, price: float,
     silently replaying the previous one, and it is cleared in a `finally` so a
     crash cannot leave the panel claiming work that stopped.
     """
+    def progress(**fields: Any) -> None:
+        update_inflight(root, **fields)
+
+    plan = list(agents) if agents else agent_names()
     mark_inflight(root, symbol=symbol or cfg.market.symbol,
-                  agents=agents, now=now)
+                  agents=agents, now=now, plan=plan)
     try:
         return _run_cycle_body(
             cfg, client, price, atr, symbol, subreddit, dcfg, root, snapshot,
-            agents, now, ledger, vision, bars, chart_title, position)
+            agents, now, ledger, vision, bars, chart_title, position, progress)
     finally:
         clear_inflight(root)

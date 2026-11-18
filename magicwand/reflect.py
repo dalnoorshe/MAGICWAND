@@ -95,29 +95,14 @@ def _closed_trades(ledger: Ledger) -> list[dict]:
 
 
 def _agent_grades(ledger: Ledger) -> dict[str, dict]:
-    claims: dict[str, dict] = {}
-    for e in ledger.entries():
-        if e.get("kind") == "agent_claim":
-            p = e.get("payload", {}) or {}
-            claims[p.get("claim_id")] = p
-    out: dict[str, dict] = {}
-    for e in ledger.entries():
-        if e.get("kind") != "grade":
-            continue
-        p = e.get("payload", {}) or {}
-        src = claims.get(p.get("claim_id"))
-        if not src:
-            continue
-        a = src.get("agent", "?")
-        s = out.setdefault(a, {"n": 0, "right": 0, "wrong": 0})
-        s["n"] += 1
-        if p.get("verdict") == "right":
-            s["right"] += 1
-        elif p.get("verdict") == "wrong":
-            s["wrong"] += 1
-    for s in out.values():
-        s["hit_rate"] = round(s["right"] / s["n"], 4) if s["n"] else 0.0
-    return out
+    """Per-reader skill, from ONE definition.
+
+    This used to be a second, private copy of the same arithmetic — and the two
+    copies drifted: neither applied a base rate, so influence followed a raw hit
+    rate that a trending market inflates for free. It now delegates.
+    """
+    from .research_loop import agent_track_record
+    return agent_track_record(ledger)
 
 
 def _family_of(agent_label: str) -> str:
@@ -165,14 +150,23 @@ def reflect(ledger: Ledger, policy: Policy) -> Reflection:
     # ---- per-agent calibration ----
     weights: dict[str, float] = {}
     for agent, s in grades.items():
-        if s["n"] < MIN_SAMPLE:
+        if int(s.get("n", 0)) < MIN_SAMPLE:
             continue
-        hit = s["hit_rate"]
-        weights[agent] = round(max(0.05, min(1.0, 0.5 + (hit - 0.5) * 1.2)), 3)
+        weights[agent] = round(float(s.get("influence", 0.5)), 3)
+        hit = float(s.get("hit_rate", 0.0))
+        base = float(s.get("base_rate", 0.0))
+        skill = float(s.get("skill", 0.0))
+        windows = int(s.get("windows", 0))
         findings.append(Finding(
             "agent", agent,
-            f"{s['n']} graded claims, hit rate {hit:.0%} -> influence {weights[agent]:.2f}",
-            {"n": s["n"], "hit_rate": hit}))
+            f"{s['n']} graded claims over {windows} independent windows: "
+            f"hit {hit:.0%} vs base {base:.0%} -> skill {skill:+.1%}"
+            f"{'' if s.get('significant') else ' (not significant)'} "
+            f"-> influence {weights[agent]:.2f}",
+            {"n": s["n"], "windows": windows, "hit_rate": hit,
+             "base_rate": base, "skill": skill,
+             "significant": bool(s.get("significant")),
+             "influence": weights[agent]}))
 
     # ---- policy adaptation (bounded arithmetic, not opinion) ----
     before = policy.effective()

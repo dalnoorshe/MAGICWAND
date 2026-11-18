@@ -303,16 +303,26 @@ def s_strategy_for_wrong_market() -> Outcome:
 
 
 def s_confidence_calibration() -> Outcome:
-    """A reader that always says 0.9 should not keep influence if it is wrong."""
+    """Does influence follow SKILL, or a hit rate a trend inflates for free?
+
+    A reader that is always bearish scores 76% in a sample where 76% of windows
+    fell. Weighting on that hands the market's own drift to whoever repeated it
+    loudest — which is what this project did until the numbers were checked.
+    """
     import inspect
-    from . import reflect
-    src = inspect.getsource(reflect)
-    if "hit_rate" in src and "_weight" in inspect.getsource(__import__(
-            "magicwand.agents", fromlist=["x"])):
+    from . import agents, research_loop
+    tr = inspect.getsource(research_loop.agent_track_record)
+    w = inspect.getsource(agents._weight)
+    adjusted = "base_rate" in tr and "skill" in tr and "windows" in tr
+    used = "influence" in w
+    if adjusted and used:
         return Outcome("calibration", "INFO",
-                       "influence follows measured hit rate; confidence itself is "
-                       "NOT yet checked against outcomes")
-    return Outcome("calibration", "GAP", "no calibration feedback")
+                       "influence follows skill against a per-horizon base rate, "
+                       "counted in independent price paths; confidence itself is "
+                       "still not calibrated (a reader can be sure and wrong)")
+    return Outcome("calibration", "GAP",
+                   "influence is not base-rate adjusted — a raw hit rate in a "
+                   "trending market awards skill that is not there")
 
 
 def s_default_account_can_trade() -> Outcome:

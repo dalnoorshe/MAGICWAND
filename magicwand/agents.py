@@ -361,16 +361,19 @@ MISSING_READER_PRIOR = 0.5
 
 
 def _weight(agent: str, track: Optional[dict]) -> float:
-    """Agent influence from its own record, defaulting to a cautious 0.5."""
-    if not track:
-        return 0.5
-    t = track.get(agent) or {}
-    n = int(t.get("n", 0))
-    if n < 5:
-        return 0.5                       # not enough evidence to trust or doubt
-    hit = float(t.get("hit_rate", 0.5))
-    # Map a coin-flip to 0.5 influence and 80% to ~1.0, 20% to ~0.
-    return _clamp(0.5 + (hit - 0.5) * 1.2, 0.05, 1.0)
+    """Agent influence from measured SKILL, defaulting to a cautious 0.5.
+
+    Not from its hit rate. In a sample where 76% of 24h windows fell, a reader
+    that is always bearish scores 76% and has demonstrated nothing; weighting
+    on that number gave the loudest readers the most say in a market that did
+    the work for them. `influence` arrives already adjusted against the base
+    rate and shrunk by the number of independent price paths.
+    """
+    t = (track or {}).get(agent) or {}
+    influence = t.get("influence")
+    if influence is None:
+        return 0.5                       # no measurable record, no extra say
+    return _clamp(float(influence), 0.05, 1.0)
 
 
 def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,

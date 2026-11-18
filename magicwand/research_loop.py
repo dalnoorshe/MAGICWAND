@@ -37,31 +37,112 @@ from .vision_agent import read_chart
 # Agent track record
 # --------------------------------------------------------------------------
 
+# A reader needs this many INDEPENDENT price paths before its influence moves
+# away from neutral. Claims graded together share a price path, so 575 claims
+# over 31 distinct realized moves are 31 observations, not 575.
+MIN_WINDOWS = 20
+# Pseudo-count pulling a small sample toward neutral influence.
+SHRINK = 10.0
+
+
+def _influence_from(skill: float, windows: int) -> float:
+    """Map measured skill to influence, shrunk toward neutral.
+
+    Deliberately asymmetric in effect: a reader with negative skill gets less
+    say, never an INVERTED say. Flipping a bad reader is an overfit dressed up
+    as cleverness, and it fails the first time the market changes character.
+    """
+    if windows < MIN_WINDOWS:
+        return 0.5
+    shrink = windows / (windows + SHRINK)
+    return max(0.05, min(1.0, 0.5 + skill * 1.2 * shrink))
+
+
 def agent_track_record(ledger: Ledger) -> dict:
-    """Per-agent hit rate from graded claims. The basis for influence."""
-    by_id: dict[str, dict] = {}
+    """Per-reader SKILL, not per-reader accuracy.
+
+    A raw hit rate is meaningless on its own, and this project had exactly that
+    bug: over a two-week sample where 76% of 24h windows fell, every reader
+    leaned bearish, so "always bearish" scored 76%. Two readers outscored that
+    baseline by nothing at all while carrying influence weights of 0.62 and
+    0.60, and one reader with 26 claims scored 88% and got 0.96.
+
+    So each reader is scored against the base rate for the direction it called,
+    over the same horizon, and the sample is counted in distinct price paths.
+    Everything here is recomputable from the ledger by hand.
+    """
+    claims: dict[str, dict] = {}
     for e in ledger.entries():
-        p = e.get("payload", {}) or {}
+        p = e.get("payload") or {}
         if e.get("kind") == "agent_claim":
-            by_id[p.get("claim_id")] = p
-    stats: dict[str, dict] = {}
+            claims[p.get("claim_id")] = p
+    graded: list[tuple[dict, dict]] = []
     for e in ledger.entries():
         if e.get("kind") != "grade":
             continue
-        p = e.get("payload", {}) or {}
-        src = by_id.get(p.get("claim_id"))
-        if not src:
-            continue
+        p = e.get("payload") or {}
+        src = claims.get(p.get("claim_id"))
+        if src is not None:
+            graded.append((src, p))
+    if not graded:
+        return {}
+
+    # How often the price actually rose, per horizon. This is the baseline a
+    # reader has to beat: saying "down" in a down market is not a forecast.
+    rose: dict[int, int] = {}
+    total: dict[int, int] = {}
+    for src, g in graded:
+        h = int(src.get("horizon_bars") or 24)
+        total[h] = total.get(h, 0) + 1
+        if float(g.get("realized_move") or 0.0) > 0:
+            rose[h] = rose.get(h, 0) + 1
+    p_up = {h: (rose.get(h, 0) / n) for h, n in total.items() if n}
+
+    stats: dict[str, dict] = {}
+    for src, g in graded:
         agent = src.get("agent", "unknown")
         s = stats.setdefault(agent, {"n": 0, "right": 0, "wrong": 0,
-                                     "overstated": 0, "flat": 0})
+                                     "overstated": 0, "flat": 0,
+                                     "_base": [], "_paths": set()})
         s["n"] += 1
-        verdict = p.get("verdict", "flat")
+        verdict = g.get("verdict", "flat")
         if verdict in s:
             s[verdict] += 1
+        h = int(src.get("horizon_bars") or 24)
+        up = p_up.get(h, 0.5)
+        expected = float(src.get("expected_move") or 0.0)
+        s["_base"].append(up if expected > 0 else 1.0 - up)
+        s["_paths"].add(round(float(g.get("realized_move") or 0.0), 6))
+
+    out: dict[str, dict] = {}
     for agent, s in stats.items():
-        s["hit_rate"] = round(s["right"] / s["n"], 4) if s["n"] else 0.0
-    return stats
+        n = s["n"]
+        windows = len(s["_paths"])
+        hit = s["right"] / n if n else 0.0
+        base = (sum(s["_base"]) / n) if n else 0.0
+        skill = hit - base
+        # Standard error of the NULL model (the base rate), not of the
+        # observed hit rate: at hit = 100% the observed variance is zero, which
+        # would make every perfect-but-tiny sample "significant".
+        p0 = max(0.0, min(1.0, base))
+        se = ((p0 * (1.0 - p0) / windows) ** 0.5) if windows else 0.0
+        out[agent] = {
+            "n": n,
+            "windows": windows,
+            "right": s["right"],
+            "wrong": s["wrong"],
+            "overstated": s["overstated"],
+            "flat": s["flat"],
+            "hit_rate": round(hit, 4),
+            "base_rate": round(base, 4),
+            "skill": round(skill, 4),
+            "se": round(se, 4),
+            # Positive skill this large is unlikely to be luck; it is still not
+            # proof, so it only moves influence, never a trade.
+            "significant": bool(skill > 2.0 * se),
+            "influence": round(_influence_from(skill, windows), 3),
+        }
+    return out
 
 
 # --------------------------------------------------------------------------

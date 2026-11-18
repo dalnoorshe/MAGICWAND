@@ -147,12 +147,24 @@ arithmetic rather than advice:
 Every refusal is written to the ledger with its reason. Nothing is silently
 dropped.
 
-**Agents earn influence and lose it.** Each verdict is stored as a dated claim
-with a horizon, graded against the price when the horizon expires, and tallied
-per agent. Influence on the synthesizer scales with that hit rate: an agent
-with no record gets a cautious 0.5 weight, a 80% hit rate gets ~1.0, a 20%
-hit rate gets ~0.05. The scoreboard is the whole point — without it this is
-just an opinionated newsletter.
+**Agents earn influence and lose it — but only for skill, not for luck.**
+Each verdict is stored as a dated claim with a horizon, graded when the horizon
+expires, and then scored **against the base rate**: over this sample 76% of 24h
+windows fell, so a reader that always says "fall" is right 76% of the time and
+has shown nothing. `skill = hit rate − base rate for the direction it called`,
+and the sample is counted in **distinct price paths** — 575 claims over 31
+distinct moves are 31 observations, not 575.
+
+Influence follows skill, shrunk toward 0.5 when the sample is small. A reader
+that repeats the drift gets exactly 0.5. A reader below the base rate gets less
+say — never an inverted say, because flipping a bad reader is an overfit wearing
+a clever hat.
+
+The honest current reading on the real ledger: **no reader is significant.**
+`charts` hits 88% against a 74% base (+14.8pp, ±9.2pp — not proven), `derivatives`
+and `news` score *below* the base rate (−13.5pp, −13.2pp), `onchain` and `social`
+are within noise. Influence 0.38–0.50, i.e. nobody has earned more than a
+neutral vote. The scoreboard's job is to say that out loud.
 
 ### Run it
 
@@ -752,7 +764,8 @@ of what it learned. `wand.py` reflects on its ledger after every tick:
 
 - per-family expectancy and hit rate → **demote** families that lose after costs,
   **prefer** those that do not
-- per-agent calibration → scale each reader's influence on the synthesizer
+- per-agent **skill vs base rate** (not raw hit rate, and not per claim —
+  per independent price path) → scale each reader's influence on the synthesizer
 - stop-hit vs target-hit ratio → widen stops if they are being clipped
 
 Then it adjusts `risk_per_trade`, `stop_atr_mult`, `target_atr_mult` and

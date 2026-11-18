@@ -79,6 +79,11 @@ class AgentVerdict:
     # pipeline placeholder: it must never veto a trade, and its claims must
     # never enter an agent's graded track record.
     stub: bool = False
+    # Fraction of this reader's declared sources that actually answered.
+    # 1.0 for a channel that is one endpoint, or that saw all of its feeds.
+    # Belongs in the verdict because it changes how much the reading is worth:
+    # a social call from 1 of 3 sources is not a social call from 3 of 3.
+    coverage: float = 1.0
 
     @property
     def trusted(self) -> bool:
@@ -94,6 +99,9 @@ class ResearchReport:
     symbol: str
     agents: list[AgentVerdict]
     evidence_score: float = 0.0
+    # Weighted fraction of declared sources that answered this cycle. Not a
+    # confidence: a measurement of how much of the world was actually seen.
+    coverage: float = 1.0
     decision: str = "neutral"       # support | veto | neutral
     vetoed_by: list[str] = field(default_factory=list)
     # Vetoes that were dropped because only one source backed them
@@ -334,6 +342,8 @@ def run_all(snap: MarketSnapshot, client: DeepSeekClient,
                                f"{snap.sources[n].error or 'unknown'}")
         else:
             v = run_agent(n, snap, client)
+        src = snap.sources.get(n)
+        v.coverage = src.coverage if src is not None else 1.0
         out.append(v)
         if on_done is not None:
             on_done(v)
@@ -343,6 +353,12 @@ def run_all(snap: MarketSnapshot, client: DeepSeekClient,
 # --------------------------------------------------------------------------
 # Synthesis
 # --------------------------------------------------------------------------
+
+# The influence a reader is assumed to have had when it did not report at all.
+# Neutral on purpose: large enough that a silent absence lowers conviction,
+# small enough that it is not treated as a maximally confident veto.
+MISSING_READER_PRIOR = 0.5
+
 
 def _weight(agent: str, track: Optional[dict]) -> float:
     """Agent influence from its own record, defaulting to a cautious 0.5."""
@@ -371,13 +387,39 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
     # counter veto real trades and would pollute the agents' track records.
     stubs = [v for v in verdicts if v.stub]
     trusted = [v for v in verdicts if v.trusted and not v.stub]
+    # A verdict whose channel answered nothing is not evidence — keeping it
+    # would let an empty reading still swing the score, and still veto.
+    trusted = [v for v in trusted
+               if _clamp(float(getattr(v, "coverage", 1.0)), 0.0, 1.0) > 0.0]
     total_w = 0.0
     weighted = 0.0
+    seen = 0.0
     for v in trusted:
         w = _weight(v.agent, track) * max(v.confidence, 0.15)
         weighted += v.evidence_score * w
+        seen += w * _clamp(float(getattr(v, "coverage", 1.0)), 0.0, 1.0)
         total_w += w
-    rep.evidence_score = round(weighted / total_w, 4) if total_w else 0.0
+    # Evidence from fewer sources is weaker evidence. Without this, losing a
+    # channel does not reduce conviction — it silently renormalises the average
+    # over whatever survived, so one dead URL moves the decision while the
+    # result still sounds just as certain. Shrinking toward neutral is the
+    # conservative direction: less data, less edge claimed.
+    #
+    # The denominator counts readers that were SUPPOSED to report, not just the
+    # ones that did. A viewer that vanished must not disappear from the
+    # arithmetic — that is precisely how a 404 becomes invisible. A missing
+    # reader is charged the neutral influence below, because assuming it would
+    # have been near-weightless would make its absence cost nothing.
+    present = {v.agent for v in trusted}
+    denominator = total_w
+    for v in verdicts:
+        if v.stub or v.agent in present:
+            continue
+        denominator += _weight(v.agent, track) * MISSING_READER_PRIOR
+    conviction = (seen / denominator) if denominator else 0.0
+    rep.coverage = round(conviction, 4)
+    rep.evidence_score = (round(weighted / total_w * conviction, 4)
+                          if total_w else 0.0)
 
     # A veto needs a confident, trustworthy, negative reading. Two weak
     # negatives do not add up to a strong one, which is why we take the
@@ -390,13 +432,19 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
         # themselves into a trade — or out of a good one.
         needed = (single_source_min_confidence
                   if v.corroboration < 2 else min_confidence)
+        # ...and a veto built on part of a channel has to clear a higher bar
+        # still: half the market read confidently is not half a veto, it is a
+        # weaker one.
+        needed = min(1.0, needed + (1.0 - _clamp(
+            float(getattr(v, "coverage", 1.0)), 0.0, 1.0)) * 0.25)
         if v.confidence >= needed:
             rep.vetoed_by.append(v.agent)
         else:
             rep.single_source.append(v.agent)
     if rep.vetoed_by:
         rep.decision = "veto"
-    elif rep.evidence_score > 0.25 and any(v.stance == "support" for v in trusted):
+    elif (rep.evidence_score > 0.25 and conviction >= 0.5
+          and any(v.stance == "support" for v in trusted)):
         rep.decision = "support"
     else:
         rep.decision = "neutral"
@@ -415,6 +463,8 @@ def synthesize(verdicts: list[AgentVerdict], symbol: str, ts: str,
     if stubs:
         bits.append(f"{len(stubs)} stub (ignored)")
     bits.append(f"evidence {rep.evidence_score:+.2f}")
+    if conviction < 0.999:
+        bits.append(f"coverage {conviction:.0%} of sources")
     if rep.vetoed_by:
         bits.append(f"VETO by {', '.join(rep.vetoed_by)}")
     if rep.single_source:

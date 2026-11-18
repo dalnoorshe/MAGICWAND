@@ -507,12 +507,17 @@ function agentCard(a) {
   }
   const conf = Number(a.confidence || 0);
   const corr = Number(a.corroboration || 0);
+  const cov = Number(a.coverage == null ? 1 : a.coverage);
+  // How much of this reader's own sources answered. A reading from 1 of 3
+  // sources is shown as such, because it is worth less than a full one.
+  const covBadge = cov >= 0.999 ? ""
+    : `<span class="badge b-warn" title="only ${Math.round(cov * 100)}% of this reader's sources answered — the evidence is shrunk toward neutral">${Math.round(cov * 100)}% of sources</span>`;
   const corrBadge = corr === 0 ? ""
     : corr === 1 ? '<span class="badge b-warn" title="one independent source — a single-source veto needs 0.80 confidence">1 source</span>'
     : `<span class="badge b-dim" title="independent sources backing this">${corr} sources</span>`;
   return `<div class="agent ${esc(a.stance)}">
     <div class="row"><b>${esc(a.agent)}</b>
-      <span>${corrBadge}<span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
+      <span>${corrBadge}${covBadge}<span class="badge ${a.stance === "veto" ? "b-bad" : a.stance === "support" ? "b-good" : "b-dim"}">${esc(a.stance)}</span>
       <span class="dim mono"> conf ${conf.toFixed(2)} · ev ${Number(a.evidence_score||0).toFixed(2)}</span></span></div>
     <div class="thesis">${esc(a.thesis || "")}</div>
     <div class="bar"><i style="width:${Math.round(conf*100)}%"></i></div>

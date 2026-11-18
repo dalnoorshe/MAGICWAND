@@ -73,6 +73,31 @@ class Source:
     fetched_at: str
     data: dict = field(default_factory=dict)
     error: str = ""
+    # Which sub-providers answered, by name. Empty means "this channel is one
+    # endpoint, all or nothing". Coverage is what stops a single dead URL from
+    # silently reweighting every other reader: a channel that saw 2 of 3
+    # sources is not the same evidence as one that saw all 3, and the synthesis
+    # must know the difference.
+    providers: dict[str, bool] = field(default_factory=dict)
+
+    @property
+    def coverage(self) -> float:
+        """Fraction of this channel's declared providers that answered.
+
+        Undeclared providers means the channel is atomic: 1.0 when it answered,
+        0.0 when it did not. Never NaN, never a guess.
+        """
+        if not self.providers:
+            return 1.0 if self.ok else 0.0
+        answered = sum(1 for v in self.providers.values() if v)
+        return answered / len(self.providers)
+
+    @property
+    def provider_summary(self) -> str:
+        if not self.providers:
+            return ""
+        answered = sum(1 for v in self.providers.values() if v)
+        return f"{answered}/{len(self.providers)} sources"
 
 
 @dataclass
@@ -362,11 +387,15 @@ def fetch_news(hours: int = 24, feeds: Optional[dict] = None,
         time.sleep(0.2)  # be polite to free feeds
     found.sort(key=lambda x: x["published"], reverse=True)
     shown = found[:30]
+    # Which feeds answered, so four feeds going down reads differently from one.
+    seen_sources = {it.get("source") for it in found}
+    providers = {name: name in seen_sources for name in feeds}
     return Source(name="news", ok=bool(found), fetched_at=iso(utcnow()),
                   data={"count": len(found),
                         "distinct_stories": distinct_stories(shown),
                         "items": shown,
                         "errors": errors},
+                  providers=providers,
                   error="" if found else ("; ".join(errors) or "no recent headlines"))
 
 
@@ -573,6 +602,9 @@ def fetch_social(subreddit: str = "solana", samples: int = 8,
     ok = answered >= 2
     return Source(
         name="social", ok=ok, fetched_at=iso(utcnow()), data=data,
+        providers={"reddit": bool(entries),
+                   "coingecko trending": bool(attention),
+                   "fear & greed": bool(mood)},
         error="" if ok else (f"only {answered} of 3 crowd sources answered: "
                              + ", ".join(missing)))
 
@@ -619,6 +651,10 @@ def fetch_onchain() -> Source:
         pass
     data["caveats"] = caveats
     return Source(name="onchain", ok=parts >= 2, fetched_at=iso(utcnow()), data=data,
+                  providers={"blockchain.info": "mempool_tx" in data,
+                             "defillama stablecoins":
+                                 "stablecoin_supply_change_pct" in data,
+                             "coingecko global": "total_mcap_change_pct" in data},
                   error="" if parts >= 2 else "fewer than 2 on-chain endpoints responded")
 
 

@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 431 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 447 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -113,6 +113,15 @@ everything else is standard library. Python 3.10+.
       main strategy                  AGENT DESK
       (may be vetoed)             (sandboxed, earn-to-trade)
 ```
+
+**How the evidence is weighted.** Every reader declares its sources, and every
+verdict carries the fraction of them that actually answered. A dead feed does not
+vanish from the arithmetic: a reader that never reported still counts in the
+denominator, a reader that saw 2 of 3 sources is charged for the third, and the
+evidence score is shrunk toward neutral by that coverage. A veto from a thin
+channel has to clear a higher confidence bar. That is what stops one 404 from
+silently reweighting the other readers and changing a decision at full
+confidence — the failure mode this project had and the operator spotted by eye.
 
 **What the agents can and cannot do.** A reader may `support`, `veto`, or stay
 `neutral`. Only `veto` changes behaviour: it can block the strategy's trade.

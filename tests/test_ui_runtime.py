@@ -91,6 +91,13 @@ const calls = [
   ["renderAgents empty", () => renderAgents(null)],
   ["renderAgents aged", () => renderAgents(research, {server_time: "2026-11-16T10:00:00Z",
                                                        autopilot: {interval: 900}})],
+  ["renderAgents thin channel", () => renderAgents(
+     {ts: "2026-11-16T07:00:00Z", decision: "neutral", evidence_score: -0.1,
+      summary: "2/3 sources", stub: false, agents: [
+        {agent: "social", stance: "neutral", confidence: 0.5, evidence_score: -0.1,
+         corroboration: 2, coverage: 0.667, thesis: "attention is elsewhere",
+         error: ""}]},
+     {server_time: "2026-11-16T07:01:00Z"})],
   ["renderAgents inflight", () => renderAgents(research, {server_time: "2026-11-16T07:03:00Z",
                                                           research_inflight: {age_seconds: 12}})],
   ["renderDesk", () => renderDesk(state.desk)],
@@ -134,6 +141,17 @@ check("fresh reading has no stale banner",
 check("fresh age reads in minutes",
       /researched 3 min ago/.test(document.getElementById("researchTs").textContent),
       document.getElementById("researchTs").textContent);
+
+// A reader that saw part of its sources must say so on the card.
+renderAgents({ts: "2026-11-16T07:00:00Z", decision: "neutral", evidence_score: -0.1,
+              summary: "s", stub: false, agents: [
+                {agent: "social", stance: "neutral", confidence: 0.5,
+                 evidence_score: -0.1, corroboration: 2, coverage: 0.667,
+                 thesis: "attention is elsewhere", error: ""}]},
+             {server_time: "2026-11-16T07:01:00Z"});
+check("partial coverage is shown on the card",
+      /67% of sources/.test(document.getElementById("agents").innerHTML),
+      document.getElementById("agents").innerHTML.slice(0, 400));
 
 renderAgents(research, {server_time: "2026-11-16T07:03:00Z",
                         research_inflight: {age_seconds: 12}});

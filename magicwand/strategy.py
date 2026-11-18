@@ -63,7 +63,16 @@ class Strategy:
         }
 
     def _series(self, name: str, bars: list[Bar]):
-        if self._cache is None or self._cache_n != len(bars):
+        # The backtester hands `decide` a PREFIX of the same series on every bar
+        # (`bars[:i + 1]`) so lookahead is physically impossible. That is a good
+        # rule, but recomputing every indicator series for every prefix was
+        # O(n^2): a 4,000-bar backtest took 45 seconds, of which 125 of 125
+        # profiled seconds were inside zscore raising a Python exception per
+        # bar's worth of arithmetic. Every indicator here is a trailing-window
+        # function, so a series computed on the full list is already causal —
+        # index i never looked past i. Re-preparing is only needed when we do
+        # not have the value yet.
+        if self._cache is None or len(bars) > self._cache_n:
             self.prepare(bars)
         return self._cache[name]  # type: ignore[index]
 
@@ -71,12 +80,6 @@ class Strategy:
         raise NotImplementedError
 
     # ---- helpers shared by the concrete strategies ----
-
-    def _atr_at(self, bars: list[Bar], i: int) -> Optional[float]:
-        # Recomputation per bar is O(n^2) in the worst case but n is small
-        # (<= a few thousand bars) and clarity beats cleverness here.
-        a = ind.atr(bars[: i + 1], self.cfg.atr_period)
-        return a[i] if i < len(a) else None
 
 
 class SmaTrend(Strategy):

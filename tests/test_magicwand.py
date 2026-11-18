@@ -306,3 +306,69 @@ class TestPaperLoop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestBacktestIsNotQuadratic(unittest.TestCase):
+    """The tick loop hands a growing prefix to decide() on every bar.
+
+    That is correct — it makes lookahead impossible — but recomputing every
+    indicator series per prefix made the backtest O(n^2): 300 bars ran in 1s,
+    4,000 bars in 45s. Every indicator is a trailing-window function, so a
+    series computed once on the full list is already causal.
+    """
+
+    def _run(self, n):
+        from magicwand import data as data_mod
+        from magicwand import backtest as bt
+        from magicwand.config import Config
+        from magicwand.strategy import build as build_strategy
+        cfg = Config()
+        bars = data_mod.synthetic_bars(n, seed=cfg.seed,
+                                       timeframe=cfg.market.timeframe)
+        strat = build_strategy(cfg.strategy, seed=cfg.seed)
+        prepares = {"n": 0}
+        real = strat.prepare
+
+        def counting(b):
+            prepares["n"] += 1
+            return real(b)
+
+        strat.prepare = counting
+        bt.run_backtest(bars, cfg, strat,
+                        bt.BacktestOptions(fee_mult=1.0, signal_delay=1,
+                                           seed=cfg.seed))
+        return prepares["n"], strat
+
+    def test_prepare_runs_once_not_once_per_bar(self):
+        calls, _ = self._run(300)
+        self.assertLessEqual(calls, 2,
+                             f"prepare ran {calls} times for 300 bars — the "
+                             f"indicator cache is being rebuilt per bar")
+
+    def test_the_work_does_not_grow_quadratically(self):
+        small, _ = self._run(200)
+        large, _ = self._run(2000)
+        self.assertLessEqual(large, small + 1,
+                             "prepare calls grew with the number of bars")
+
+    def test_results_are_identical_with_or_without_the_cache(self):
+        """Same trades whether the cache is used or recomputed every bar."""
+        from magicwand import data as data_mod
+        from magicwand import backtest as bt
+        from magicwand.config import Config
+        from magicwand.strategy import build as build_strategy
+        cfg = Config()
+        bars = data_mod.synthetic_bars(400, seed=cfg.seed,
+                                       timeframe=cfg.market.timeframe)
+        fast = bt.run_backtest(bars, cfg, build_strategy(cfg.strategy, seed=cfg.seed),
+                               bt.BacktestOptions(fee_mult=1.0, signal_delay=1,
+                                                  seed=cfg.seed))
+        strat = build_strategy(cfg.strategy, seed=cfg.seed)
+        strat._cache_n = -1                     # force a rebuild on every bar
+        strat._series = lambda name, b: strat.prepare(b) or strat._cache[name]
+        slow = bt.run_backtest(bars, cfg, strat,
+                               bt.BacktestOptions(fee_mult=1.0, signal_delay=1,
+                                                  seed=cfg.seed))
+        self.assertEqual([(t.entry_ts, t.exit_ts) for t in fast.trades],
+                         [(t.entry_ts, t.exit_ts) for t in slow.trades])
+        self.assertAlmostEqual(fast.final_equity, slow.final_equity, places=6)

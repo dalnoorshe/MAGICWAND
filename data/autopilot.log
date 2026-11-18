@@ -270,3 +270,5 @@
 [autopilot 19:01:06] tick 1: research: 4/5 readers reported; 1 degraded; evidence -0.24; VETO by news, onchain | strategy 'sol_deep_pullback_revert_wide' rejected: REJECTED: not profitable 
 [autopilot 19:16:37] tick 2: research: 4/5 readers reported; 1 degraded; evidence -0.24; VETO by news, onchain | strategy 'sol_macro_breakdown_breakout_short' rejected: REJECTED: not profit
 [autopilot 19:32:02] tick 3: research: 4/5 readers reported; 1 degraded; evidence -0.17; VETO by news, onchain | idea 'sol_short_breakout_momentum_cascade' refused: near-duplicate of sol_fu
+[autopilot 19:35:13] autopilot started
+[autopilot 19:35:45] tick 1: research: 5/5 readers reported; evidence -0.20; coverage 94% of sources; VETO by news, onchain | strategy 'sol_wide_slow_vol_breakout' rejected: REJECTED: not p

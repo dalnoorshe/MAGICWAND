@@ -640,7 +640,7 @@ python3 wand.py keys            # generated from the code, always current
 | Reddit | none | post volume + titles when it answers (it usually refuses bots) |
 | On-chain proxies | none | mempool, stablecoin supply, market-cap flows |
 | Whale Alert / Glassnode | not wired | would replace the on-chain proxies with real netflow |
-| Longer history | not wired | would let backtests span years, not ~12 days |
+| Longer history | **`--candles 4000 --exchange binance`** | 4,000 hourly bars ≈ 5.5 months (the default is 300 ≈ 12 days). Free, no key, ~3s to fetch |
 | **Broker / exchange** | **none — do not connect one** | nothing; there is no live order path in this build |
 
 So: **one key, for the AI.** Everything else is public data that needs no
@@ -1065,7 +1065,8 @@ reality check, and then fund it from savings, not from hope.
 - [x] Vision: rendered candlestick charts read by `deepseek-flash`
 - [x] Image prompt-injection detection; chart verdicts are veto-only
 - [x] No attempt cap — novelty-bounded instead of count-bounded
-- [ ] Longer history (the free hourly window is only ~12 days)
+- [x] Longer history — Binance paging gives 4,000 hourly bars (~5.5 months) in ~3s
+- [x] Backtests are linear again: a 4,000-bar run takes 0.08s, not 45s
 - [ ] Walk-forward / out-of-sample split, so tuning cannot cheat
 - [ ] Portfolio-level risk across several symbols
 - [ ] `Broker` protocol, then paper/demo adapters (Alpaca → OANDA → Binance → MT5)

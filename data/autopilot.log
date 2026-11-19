@@ -272,3 +272,8 @@
 [autopilot 19:32:02] tick 3: research: 4/5 readers reported; 1 degraded; evidence -0.17; VETO by news, onchain | idea 'sol_short_breakout_momentum_cascade' refused: near-duplicate of sol_fu
 [autopilot 19:35:13] autopilot started
 [autopilot 19:35:45] tick 1: research: 5/5 readers reported; evidence -0.20; coverage 94% of sources; VETO by news, onchain | strategy 'sol_wide_slow_vol_breakout' rejected: REJECTED: not p
+[autopilot 19:51:29] tick 2: research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by derivatives, news | idea 'sol_capitulation_mean_revert_wide' refused: near-dupl
+[autopilot 20:07:18] tick 3: research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by news; single-source veto declined from derivatives | strategy 'sol_extreme_fear
+[autopilot 20:23:01] tick 4: research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by news; single-source veto declined from derivatives | strategy 'sol_capitulation
+[autopilot 17:28:15] autopilot started
+[autopilot 17:28:51] tick 1: research: 5/5 readers reported; evidence -0.14; coverage 94% of sources; single-source veto declined from derivatives | strategy 'sol_stretched_bear_rip_revert'

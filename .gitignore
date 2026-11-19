@@ -16,6 +16,9 @@ data/*.jsonl
 data/state.json
 !data/.gitkeep
 
+# Runtime artifacts, continued — run charts from the live console
+data/charts/
+
 # Editor / OS
 .vscode/
 .idea/

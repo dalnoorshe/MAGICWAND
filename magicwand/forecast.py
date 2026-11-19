@@ -301,16 +301,35 @@ def _calibration(ps: list[float], ys: list[int], bins: int = 5) -> list[dict]:
     return out
 
 
+REGIMES = ("calm", "normal", "volatile")
+
+
 def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
-                 block: int = 50) -> tuple[Optional[Evaluation], list[Forecast]]:
-    """Train on the past, predict a block, roll forward. No peeking."""
+                 block: int = 50, by_regime: bool = False,
+                 min_regime_train: int = 60
+                 ) -> tuple[Optional[Evaluation], list[Forecast]]:
+    """Train on the past, predict a block, roll forward. No peeking.
+
+    `by_regime` fits a separate model per volatility regime instead of one model
+    that averages the regimes away. A trend rule that works in a calm market and
+    fails in a volatile one gets blended into a single middling coefficient by
+    the pooled model; fitting each separately lets the slopes differ. It also
+    divides the training data by three, so a regime below `min_regime_train`
+    falls back to the pooled model and says so rather than pretending.
+    """
     rows, ys, idxs = build_dataset(bars, horizon)
     if len(rows) < min_train + block:
         return None, []
 
+    # The regime test looks at ATR's own trailing 100 bars, so it is causal.
+    # Compute it once per bar: recomputing it inside the loop made this the
+    # dominant cost of the whole evaluation.
+    regime_of = [_regime(bars, i) for i in range(len(bars))]
+
     ps: list[float] = []
     outs: list[int] = []
     regimes: dict[str, list[tuple[float, int]]] = {}
+    fell_back: dict[str, bool] = {r: False for r in REGIMES}
     start = min_train
     while start < len(rows):
         end = min(start + block, len(rows))
@@ -319,13 +338,25 @@ def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
         # overlap the test period and leak its outcome. Without this the model
         # is scored on information it could not have had.
         cutoff = idxs[start] - horizon
-        train_n = sum(1 for i in idxs[:start] if i < cutoff)
-        model = LogisticModel().fit(rows[:train_n], ys[:train_n])
+        train = [k for k in range(start) if idxs[k] < cutoff]
+        pooled = LogisticModel().fit([rows[k] for k in train],
+                                     [ys[k] for k in train])
+        per_regime: dict[str, LogisticModel] = {}
+        if by_regime:
+            for name in REGIMES:
+                sel = [k for k in train if regime_of[idxs[k]] == name]
+                if len(sel) >= min_regime_train:
+                    per_regime[name] = LogisticModel().fit(
+                        [rows[k] for k in sel], [ys[k] for k in sel])
         for k in range(start, end):
-            p = model.predict(rows[k])
+            name = regime_of[idxs[k]]
+            model = per_regime.get(name)
+            if by_regime and model is None:
+                fell_back[name] = True
+            p = (model or pooled).predict(rows[k])
             ps.append(p)
             outs.append(ys[k])
-            regimes.setdefault(_regime(bars, idxs[k]), []).append((p, ys[k]))
+            regimes.setdefault(name, []).append((p, ys[k]))
         start = end
 
     base = sum(outs) / len(outs)
@@ -343,9 +374,17 @@ def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
         base_brier=climo_brier,
         base_accuracy=sum(1 for y in outs if y == majority) / len(outs),
         calibration=_calibration(ps, outs),
+        # Per regime, compared against that regime's OWN climatology: a regime
+        # that is 60% "up" makes 60% accuracy worthless, exactly as a whole
+        # sample that falls 76% of the time makes a bearish reader worthless.
         by_regime={r: {"n": len(v),
                        "accuracy": sum(1 for p, y in v if (p >= 0.5) == (y == 1)) / len(v),
-                       "avg_p": sum(p for p, _ in v) / len(v)}
+                       "avg_p": sum(p for p, _ in v) / len(v),
+                       "brier": _brier([p for p, _ in v], [y for _, y in v]),
+                       "base_rate": sum(y for _, y in v) / len(v),
+                       "base_brier": (lambda b: b * (1.0 - b))(
+                           sum(y for _, y in v) / len(v)),
+                       "fallback": fell_back.get(r, False)}
                    for r, v in regimes.items()},
     )
 
@@ -357,8 +396,16 @@ def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
         f = features_at(bars, i)
         if f is None:
             continue
-        p = final.predict([f[k] for k in FEATURES])
+        name = regime_of[i] if i < len(regime_of) else _regime(bars, i)
+        if by_regime:
+            sel = [k for k in range(len(rows)) if regime_of[idxs[k]] == name]
+            final_regime = (LogisticModel().fit([rows[k] for k in sel],
+                                                [ys[k] for k in sel])
+                            if len(sel) >= min_regime_train else final)
+        else:
+            final_regime = final
+        p = final_regime.predict([f[k] for k in FEATURES])
         tail.append(Forecast(ts=bars[i].ts.isoformat(), symbol="",
                              p_up=p, horizon=horizon,
-                             regime=_regime(bars, i), features=f))
+                             regime=name, features=f))
     return ev, tail

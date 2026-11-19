@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 461 tests
+python3 -m unittest discover -s tests -v  # 464 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -127,7 +127,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 461 tests, 0 audit gaps, 23 audit passes.
+- 464 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -157,7 +157,14 @@ These were each learned by breaking them. Do not "improve" them away.
   forecasts) it is still **no skill**: accuracy 52.4% vs 50.5% climatology, but
   Brier 0.2526 vs 0.2500 — better direction, worse probabilities, uncalibrated
   at both extremes (predicted 0.2–0.4 → actual 0.50; predicted 0.6–0.8 → actual
-  0.55). The calm-regime slice (n=1,214, 55.4%) is the only lead worth chasing.
+  0.55). The calm-regime slice (n=1,214, 55.4%) was the only lead, and it died
+  under a dedicated model (53.6%).
+- **Regime training is a dead end, tested twice.** One fit per volatility regime
+  (`wand.py forecast --by-regime`): Brier **0.2593 vs 0.2528 pooled**, and two of
+  the three regimes had too little data and fell back anyway. The cheap form —
+  pooled model plus two regime dummy columns — also lost: **0.2553 vs 0.2528**.
+  Splitting by regime divides the data and buys variance without buying signal.
+  Do not retry without new features first; docs/PLAN.md §2c is annotated.
 - Backtests are linear again. `decide` gets a growing prefix each bar to make
   lookahead impossible, and every indicator series was being rebuilt per prefix
   (O(n²)): 300 bars took 1s, 4,000 took 45s. The series are trailing-window

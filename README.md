@@ -928,9 +928,21 @@ against the two baselines that matter: the base rate, and a coin flip.
 The first version of this tool *claimed* an edge because its baseline was
 malformed (it compared against a hard 0/1 prediction, Brier 0.448). The baseline
 is now the base rate, and `beats_base` requires better probabilities **and**
-better-than-coin-flip direction. See `docs/PLAN.md` §2c for what would give it a
-real chance — better features (funding, open interest, taker imbalance,
-cross-asset) and better labels (triple-barrier), not a bigger model.
+better-than-coin-flip direction.
+
+On 5.5 months of hourly bars (3,733 out-of-sample forecasts) it is still **no
+skill**: accuracy 52.4% vs 50.5% climatology, but Brier 0.2526 vs 0.2500 and
+uncalibrated at both extremes. Training a separate model per volatility regime
+— the obvious next idea — is **worse**, not better:
+
+```bash
+python3 wand.py forecast --candles 4000 --exchange binance --by-regime
+# per-regime  Brier 0.2593   pooled 0.2528   -> pooled is better
+```
+
+See `docs/PLAN.md` §2c. The remaining untested ideas are better features
+(funding, open interest, taker imbalance, cross-asset lead-lag) and better
+labels (triple-barrier), not a bigger model and not regime splitting.
 
 ## Is a source broken, or is the internet saying no?
 

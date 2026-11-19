@@ -113,7 +113,10 @@ class TestNoLeakage(unittest.TestCase):
         src = inspect.getsource(forecast.walk_forward)
         self.assertIn("cutoff", src)
         self.assertIn("horizon", src)
-        self.assertIn("train_n", src)
+        # The training set must be selected by "label resolves before the test
+        # block", not by a fixed slice. (`train_n` was the old expression; the
+        # purge now builds an index list so regimes can filter it too.)
+        self.assertIn("idxs[k] < cutoff", src)
 
     def test_walk_forward_needs_enough_data(self):
         bars = dm.synthetic_bars(120, seed=1)
@@ -124,3 +127,51 @@ class TestNoLeakage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestRegimeTraining(unittest.TestCase):
+    """Per-regime fits, and the honesty rails around them."""
+
+    def _bars(self, n=900):
+        from magicwand import data as data_mod
+        from magicwand.config import Config
+        return data_mod.synthetic_bars(n, seed=Config().seed, timeframe="1h")
+
+    def test_regime_verdict_compares_against_that_regimes_own_base_rate(self):
+        from magicwand.forecast import walk_forward
+        ev, _tail = walk_forward(self._bars(), horizon=4, min_train=150,
+                                 block=40, by_regime=True, min_regime_train=10)
+        self.assertIsNotNone(ev)
+        assert ev is not None
+        self.assertTrue(ev.by_regime, "no regime breakdown was produced")
+        for name, v in ev.by_regime.items():
+            for key in ("n", "accuracy", "brier", "base_rate", "base_brier",
+                        "fallback"):
+                self.assertIn(key, v, f"{name} missing {key}")
+            # A regime that is mostly 'up' must not be able to look skilful for
+            # predicting 'up'.
+            self.assertAlmostEqual(v["base_brier"],
+                                   v["base_rate"] * (1 - v["base_rate"]),
+                                   places=9)
+
+    def test_thin_regimes_fall_back_to_the_pooled_model(self):
+        """With no regime big enough to train on, results must be identical."""
+        from magicwand.forecast import walk_forward
+        bars = self._bars()
+        pooled, _ = walk_forward(bars, horizon=4, min_train=150, block=40)
+        thin, _ = walk_forward(bars, horizon=4, min_train=150, block=40,
+                               by_regime=True, min_regime_train=100000)
+        self.assertIsNotNone(pooled)
+        self.assertIsNotNone(thin)
+        assert pooled is not None and thin is not None
+        self.assertAlmostEqual(pooled.brier, thin.brier, places=12,
+                               msg="a fallback run changed the predictions")
+        self.assertTrue(all(v["fallback"] for v in thin.by_regime.values()),
+                        "regimes claimed their own model when there was none")
+
+    def test_regime_labels_are_causal(self):
+        """A regime label at bar i must not depend on bars after i."""
+        from magicwand.forecast import _regime
+        bars = self._bars(600)
+        for i in (250, 400, 550):
+            self.assertEqual(_regime(bars, i), _regime(bars[: i + 1], i))

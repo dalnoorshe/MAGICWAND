@@ -466,6 +466,36 @@ def cmd_forecast(cfg: Config, args) -> int:
         for r, v in sorted(ev.by_regime.items()):
             print(f"    {r:9s} n={v['n']:4d}  accuracy {v['accuracy']:.1%}"
                   f"  avg p {v['avg_p']:.2f}")
+    if getattr(args, "by_regime", False):
+        reg_ev, reg_tail = forecast_mod.walk_forward(
+            bars, horizon=args.horizon, min_train=args.min_train,
+            block=args.block, by_regime=True,
+            min_regime_train=args.min_regime_train)
+        print()
+        print("  PER-REGIME MODELS (one fit per regime, pooled fallback)")
+        print("  " + "-" * 74)
+        if reg_ev is None:
+            print("  not enough history to compare")
+        else:
+            print(f"  {reg_ev.summary()}")
+            print(f"  {'regime':10s} {'n':>5s} {'acc':>7s} {'climo':>7s} "
+                  f"{'brier':>8s} {'climo':>8s} {'verdict':>10s}")
+            for r, v in sorted(reg_ev.by_regime.items()):
+                beats = v["brier"] < v["base_brier"]
+                note = "BEATS" if beats else "no skill"
+                if v.get("fallback"):
+                    note += " (fallback)"
+                print(f"  {r:10s} {v['n']:5d} {v['accuracy']:7.1%} "
+                      f"{max(v['base_rate'], 1 - v['base_rate']):7.1%} "
+                      f"{v['brier']:8.4f} {v['base_brier']:8.4f} {note:>10s}")
+            delta = reg_ev.brier - ev.brier
+            print(f"  overall Brier {reg_ev.brier:.4f} vs pooled {ev.brier:.4f} "
+                  f"({delta:+.4f}) -> "
+                  f"{'per-regime is better' if delta < 0 else 'pooled is better'}")
+            if reg_tail:
+                ft = reg_tail[0]
+                print(f"  next-bar forecast: p_up={ft.p_up:.3f} "
+                      f"trend={ft.trend:+.2f} ({ft.regime})")
     if tail:
         f = tail[0]
         print(f"  next-bar forecast: p_up={f.p_up:.3f} trend={f.trend:+.2f} "
@@ -605,6 +635,9 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--horizon", type=int, default=6)
     fc.add_argument("--min-train", type=int, default=200)
     fc.add_argument("--block", type=int, default=50)
+    fc.add_argument("--by-regime", action="store_true",
+                    help="fit a separate model per volatility regime and compare")
+    fc.add_argument("--min-regime-train", type=int, default=60)
     fc.set_defaults(fn=cmd_forecast)
 
     au = sub.add_parser("audit", help="adversarial scenario self-audit")

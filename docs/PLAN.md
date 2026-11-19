@@ -121,8 +121,15 @@ must be scored the same way):
    time-of-day/session effects. The bars alone throw away most of the signal.
 2. **Better labels** — triple-barrier (did it hit +x% before −y%?) instead of
    fixed-horizon direction, which is noisy and pays no attention to path.
-3. **Regime-conditional models** — train per volatility regime rather than one
-   model with a regime feature averaged away.
+3. ~~**Regime-conditional models**~~ — **TESTED, NEGATIVE.** One fit per regime
+   (calm/normal/volatile, causal ATR-percentile labels, purge intact) on 4,000
+   hourly bars: overall Brier **0.2593 vs 0.2528 pooled**, and two of the three
+   regimes had too little training data and fell back anyway. The cheapest form
+   of the idea — one pooled model plus two regime dummy columns — also failed:
+   **0.2553 vs 0.2528**. Regime information does not help this feature set; it
+   divides the data and buys variance. The calm-regime "lead" (55.4% accuracy)
+   did not survive a model trained for it (53.6%). Do not retry this without new
+   features first.
 4. **Calibration** — Platt/isotonic on a held-out slice; the model is
    overconfident at its extremes.
 5. **Longer history and higher timeframes** — 6h/daily series are less noisy,
@@ -131,8 +138,11 @@ must be scored the same way):
 **What is NOT the answer:** a bigger model. On this data a deep net would fit
 noise more efficiently, and the Brier score would say so.
 
-**Trigger to continue:** the operator wants to spend time on features 1 and 2,
-which are the two with the best expected return.
+**Trigger to continue:** features (1) and labels (2) remain the only untested
+items with plausible expected value. Regime conditioning is now closed, and a
+bigger model is still not the answer. The evaluation machinery is cheap enough
+to run these experiments: 4,000 bars walk-forward in ~2 minutes, a backtest in
+0.08s.
 
 ---
 

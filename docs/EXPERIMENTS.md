@@ -135,10 +135,45 @@ scored against its own label's climatology.
    0.2571 → 0.2588. Six consecutive degradations is the signature of pure
    overfitting: real columns, no incremental signal, more variance to fit.
 
-**Conclusion.** On 166 days of 1h bars with a 6-bar horizon — roughly 600
-semi-independent outcomes — a 19-column model cannot learn anything the market
-is not handing out. The bottleneck is now the SAMPLE, not the feature list or
-the label. Next: years of history (Binance pages 1,000 bars per request, so
-20,000+ hourly bars is a few seconds of fetching), higher timeframes, and longer
-horizons. Adding another clever feature to 166 days would be the same mistake
-with a new name.
+**Conclusion (revised after entry 5).** On 166 days the added features lost
+badly. On 2.3 years they lose only slightly (0.2520 vs 0.2511 price-only), so the
+size of that degradation was itself a small-sample effect. The verdict does not
+change — no skill either way — but the *reason* does: it is not that the features
+are wrong, it is that nothing here beats climatology.
+
+**A bug found while re-running this on more data.** `load_funding` asked the
+venue for its default page and got 500 records — 137 days — then paged forward
+from the end, which returns nothing. The "two years of features" run was silently
+evaluating 137 days. Fixed to walk a window with `startTime`/`endTime` and now
+pulls 2,400 records (2.2 years). A feature that quietly covers a fifth of the
+data looks exactly like a feature that doesn't work.
+
+---
+
+## 5. Twenty times more history — **NEGATIVE** (branch closed)
+
+**Question.** Every model so far used 166 days. Is the missing skill simply a
+missing sample?
+
+**Method.** 19,999 hourly SOL-USD bars from Binance, 2024-08-08 → 2026-11-19
+(2.3 years), walk-forward with purge intact, refit every 500 bars, scored against
+climatology. Two labels, with and without the full feature set.
+
+| label | features | n | acc | base | Brier | climo | verdict |
+|---|---|---|---|---|---|---|---|
+| direction | price only | 19,333 | 50.4% | 50.2% | 0.2511 | 0.2500 | no skill |
+| direction | cross+session+funding | 18,500 | **51.2%** | 50.2% | 0.2520 | 0.2500 | no skill |
+| triple | price only | 19,333 | 49.9% | 50.9% | **0.2510** | 0.2499 | no skill |
+| triple | cross+session+funding | 18,500 | 49.9% | 51.0% | 0.2524 | 0.2499 | no skill |
+
+**Result.** 20x the data moved the best Brier from 0.2511 to 0.2510. It did not
+move it past 0.2500. Direction accuracy with the full feature set reaches 51.2%
+against a 50.2% base rate — a +1.0pp edge in direction with *worse* probabilities,
+which is exactly the pattern `beats_base` exists to reject: you can be
+slightly-more-often right and still be worse calibrated than a constant.
+
+**Conclusion.** The sample was not the bottleneck. 2.3 years of hourly bars is
+enough to learn from if there were something to learn. What is left is not more
+data and not more columns: it is a different question — a different timeframe
+(4h/1d), a longer horizon (24 bars), or a different market. Testing another
+feature on another two years would be the same experiment with a new noun.

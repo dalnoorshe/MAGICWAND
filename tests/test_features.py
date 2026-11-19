@@ -171,3 +171,36 @@ class TestDatasetAssembly(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFundingPaging(unittest.TestCase):
+    """The first version asked for the venue's default page and got 500 records
+    — 137 days — while claiming to evaluate two years. It silently turned the
+    feature comparison into a comparison on a fifth of the data.
+    """
+
+    def test_paging_walks_forward_from_a_window_not_from_the_default_page(self):
+        import inspect
+        src = inspect.getsource(feat_mod.load_funding)
+        self.assertIn("startTime", src)
+        self.assertIn("endTime", src)
+        self.assertIn("while start < now_ms", src)
+
+    def test_a_stuck_page_cannot_loop_forever(self):
+        """If the venue keeps returning a full page at the same timestamp, stop."""
+        calls = []
+        import magicwand.research as research_mod
+        saved = research_mod._get_json
+
+        def fake(url):
+            calls.append(url)
+            # always a full page, with a timestamp that never advances
+            return [{"fundingTime": 1_700_000_000_000, "fundingRate": "0.0001"}] * 1000
+
+        research_mod._get_json = fake
+        try:
+            out = feat_mod.load_funding("SOL-USD", days=30, page=1000)
+        finally:
+            research_mod._get_json = saved
+        self.assertLessEqual(len(calls), 2, "the pager did not stop on a stuck page")
+        self.assertEqual(len(out), 1)

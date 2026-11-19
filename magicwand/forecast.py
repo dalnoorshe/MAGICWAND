@@ -162,18 +162,23 @@ class LogisticModel:
             self.scale.append(math.sqrt(var) or 1.0)
         self.weights = [0.0] * d
         self.bias = 0.0
+        # Standardise ONCE, not once per epoch. The old loop rebuilt the same
+        # scaled row 300 times per fit; on 20,000 bars that dominated everything
+        # else. The arithmetic is identical — same mean, same scale, same order.
+        X = [[(r[j] - self.mean[j]) / self.scale[j] for j in range(d)]
+             for r in rows]
+        w = self.weights
         for _ in range(epochs):
             gw = [0.0] * d
             gb = 0.0
-            for r, y in zip(rows, ys):
-                x = [(r[j] - self.mean[j]) / self.scale[j] for j in range(d)]
-                p = self._sigmoid(sum(w * v for w, v in zip(self.weights, x)) + self.bias)
+            for x, y in zip(X, ys):
+                p = self._sigmoid(sum(a * b for a, b in zip(w, x)) + self.bias)
                 err = p - y
                 for j in range(d):
                     gw[j] += err * x[j]
                 gb += err
             for j in range(d):
-                self.weights[j] -= lr * (gw[j] / n + self.l2 * self.weights[j] / n)
+                w[j] -= lr * (gw[j] / n + self.l2 * w[j] / n)
             self.bias -= lr * gb / n
         return self
 

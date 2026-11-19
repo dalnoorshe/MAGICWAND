@@ -284,3 +284,5 @@
 [autopilot 18:47:58] tick 6: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.18; coverage 94% of sources; single-source veto declined from derivatives | idea 'sol_tren
 [autopilot 19:03:37] tick 7: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.07; coverage 93% of sources | strategy 'sol_fear_rip_short_trend' rejected: REJECTED: not 
 [autopilot 19:19:08] tick 8: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by onchain | strategy 'sol_fear_grind_slow_revert' rejec
+[autopilot 19:34:37] tick 9: graded 4 agent claim(s) | research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by onchain; single-source veto declined from derivatives
+[autopilot 19:50:09] tick 10: graded 3 agent claim(s) | research: 5/5 readers reported; evidence -0.07; coverage 93% of sources | strategy 'sol_wide_channel_breakout_fear' rejected: REJECTED

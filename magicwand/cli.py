@@ -450,9 +450,17 @@ def _forecast_sweep(cfg: Config, args, bars, symbol: str) -> int:
     from . import forecast as fc, features as feat_mod
 
     all_groups = ("cross", "session", "funding")
-    combos: list[tuple[str, ...]] = [()]
-    for g in all_groups:
-        combos.append(tuple(list(all_groups)[:list(all_groups).index(g) + 1]))
+    ladder = getattr(args, "ladder", "cumulative")
+    if ladder == "full":
+        combos: list[tuple[str, ...]] = [all_groups]
+    elif ladder == "ends":
+        combos = [(), all_groups]
+    else:
+        combos = [()]
+        for g in all_groups:
+            combos.append(tuple(list(all_groups)[:list(all_groups).index(g) + 1]))
+    labels = [x.strip() for x in getattr(args, "labels", "direction,triple").split(",")
+              if x.strip()]
     # Contexts are shared per group so nothing is fetched twice.
     ctx_cache: dict[tuple[str, ...], object] = {}
     for groups in combos:
@@ -468,7 +476,7 @@ def _forecast_sweep(cfg: Config, args, bars, symbol: str) -> int:
     print(f"  {'label':10s} {'features':22s} {'n':>5s} {'acc':>7s} "
           f"{'base':>7s} {'brier':>8s} {'climo':>8s}  verdict")
     rows_out = []
-    for label in ("direction", "triple"):
+    for label in labels:
         for groups in combos:
             ev, _tail = fc.walk_forward(
                 bars, horizon=args.horizon, min_train=args.min_train,
@@ -730,6 +738,13 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--barrier-atr", type=float, default=1.0)
     fc.add_argument("--sweep", action="store_true",
                     help="run the label x feature-group matrix and compare")
+    fc.add_argument("--labels", default="direction,triple",
+                    help="labels for --sweep (default both)")
+    fc.add_argument("--ladder", choices=["cumulative", "ends", "full"],
+                    default="cumulative",
+                    help="cumulative: price, +cross, +session, +funding. "
+                         "ends: only price-only and all groups. full: only all "
+                         "groups. Cheap options matter on long histories.")
     fc.add_argument("--by-regime", action="store_true",
                     help="fit a separate model per volatility regime and compare")
     fc.add_argument("--min-regime-train", type=int, default=60)

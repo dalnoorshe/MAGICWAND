@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from . import data as data_mod
-from .common import Bar, iso
+from .common import Bar, iso, utcnow
 from .markets import binance_perp, binance_spot
 
 
@@ -76,10 +76,16 @@ def load_closes(symbol: str, timeframe: str, count: int) -> dict[int, float]:
     return load_series(symbol, timeframe, bars)
 
 
-def load_funding(symbol: str, count: int = 2000) -> list[tuple[int, float]]:
+def load_funding(symbol: str, days: int = 800,
+                 page: int = 1000) -> list[tuple[int, float]]:
     """Funding rate history as (epoch_ms, rate), oldest first.
 
-    Paginated: 1000 records per call, 8h apart, so ~330 days per request.
+    Paged FORWARDS from a start time, because the venue's no-start variant
+    returns only its most recent 500 records — which silently capped a "two
+    year" experiment at 137 days the first time this ran, and quietly turned
+    the feature comparison into a comparison on a fifth of the data. Ask for a
+    window and walk it; do not trust the default page.
+
     Returns [] rather than raising when the venue is unreachable.
     """
     from .research import SourceError, _get_json
@@ -87,25 +93,27 @@ def load_funding(symbol: str, count: int = 2000) -> list[tuple[int, float]]:
     pair = binance_perp(symbol)
     if not pair:
         return []
-    out: list[tuple[int, float]] = []
-    start = 0
+    now_ms = int(utcnow().timestamp() * 1000)
+    out: dict[int, float] = {}
+    start = now_ms - days * 86_400_000
     try:
-        while len(out) < count:
+        while start < now_ms:
             url = (f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={pair}"
-                   f"&limit=1000" + (f"&startTime={start}" if start else ""))
-            page = _get_json(url)
-            if not page:
+                   f"&startTime={start}&endTime={now_ms}&limit={page}")
+            rows = _get_json(url)
+            if not rows:
                 break
-            for row in page:
-                t = int(row["fundingTime"])
-                out.append((t, float(row["fundingRate"])))
-            if len(page) < 1000:
+            for row in rows:
+                out[int(row["fundingTime"])] = float(row["fundingRate"])
+            if len(rows) < page:
                 break
-            start = int(page[-1]["fundingTime"]) + 1
+            nxt = int(rows[-1]["fundingTime"]) + 1
+            if nxt <= start:          # no forward progress: stop rather than spin
+                break
+            start = nxt
     except (SourceError, ValueError, KeyError, TypeError):
-        return sorted(set(out))
-    # De-duplicate by timestamp; the venue can repeat an edge record.
-    return sorted(dict(out).items())
+        pass
+    return sorted(out.items())
 
 
 @dataclass

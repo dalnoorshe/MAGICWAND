@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 477 tests
+python3 -m unittest discover -s tests -v  # 479 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -130,7 +130,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 477 tests, 0 audit gaps, 23 audit passes.
+- 479 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -175,6 +175,11 @@ These were each learned by breaking them. Do not "improve" them away.
   3 cents and 6 minutes. The 10-parameter regression beat it. The LLM's job is
   research and judgement, where each claim can be graded — not calibrated
   probabilities. Reproduce with `python3 tools/llm_forecast.py`.
+- **2.3 years did not help either.** 19,999 hourly bars (2024-08 → 2026-11),
+  refit every 500 bars: best Brier 0.2510 (triple, price only) vs climatology
+  0.2499. Direction accuracy with all features 51.2% vs 50.2% base — a +1pp edge
+  with worse probabilities, which is exactly what `beats_base` rejects. 20x more
+  data moved the number by 0.0001. The sample was not the bottleneck.
 - **Better inputs did not buy skill either — they made it worse.** Cross-asset
   (BTC/ETH returns, BTC-SOL correlation, relative strength), session (hour-of-day)
   and funding (rate, z-score, change) added cumulatively on 4,000 bars: Brier
@@ -185,11 +190,18 @@ These were each learned by breaking them. Do not "improve" them away.
   semi-independent outcomes, and 19 columns cannot learn from that. Reproduce
   with `wand.py forecast --sweep`. New feature modules live in
   `magicwand/features.py` (causal, timestamp-aligned, holes are dropped not
-  imputed).
+  imputed). On 2.3 years instead of 166 days they lose only slightly
+  (0.2520 vs 0.2511), so the earlier size of the degradation was itself a
+  small-sample effect. Verdict unchanged: no skill.
+- **`load_funding` was silently covering 137 days, not two years.** The venue's
+  no-start page returns 500 records; paging forward from the last one returns
+  nothing. A feature that quietly covers a fifth of the data looks exactly like a
+  feature that does not work — and it produced a wrong conclusion that had to be
+  retracted. It now walks a `startTime`/`endTime` window (2,400 records, 2.2y).
 - `docs/EXPERIMENTS.md` is where falsified ideas go, with their numbers, so
-  nobody re-runs them. Closed there: regime training, LLM forecasting, better
-  features, better labels. Open: more history, higher timeframes, longer
-  horizons, calibration.
+  nobody re-runs them. Closed: regime training, LLM forecasting, better
+  features, better labels, more history. Open: higher timeframes, longer
+  horizons, a different market, calibration.
 - Backtests are linear again. `decide` gets a growing prefix each bar to make
   lookahead impossible, and every indicator series was being rebuilt per prefix
   (O(n²)): 300 bars took 1s, 4,000 took 45s. The series are trailing-window

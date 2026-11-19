@@ -123,6 +123,8 @@ These were each learned by breaking them. Do not "improve" them away.
 | `magicwand/forecast.py` | walk-forward trend model, purged, honestly scored |
 | `magicwand/compose.py` | strategy grammar: composed ideas, same gate |
 | `docs/PLAN.md` | deferred work, each with its trigger |
+| `docs/EXPERIMENTS.md` | falsified ideas with their numbers — read before retrying |
+| `tools/llm_forecast.py` | scores the LLM against climatology; 3 cents per run |
 | `docs/PLATFORMS.md` | broker integrations, MT5 caveat |
 
 ## State of play (as of the last session)
@@ -165,6 +167,16 @@ These were each learned by breaking them. Do not "improve" them away.
   pooled model plus two regime dummy columns — also lost: **0.2553 vs 0.2528**.
   Splitting by regime divides the data and buys variance without buying signal.
   Do not retry without new features first; docs/PLAN.md §2c is annotated.
+- **"Why not just use the LLM to forecast?" is answered, negatively.** 250
+  historical setups given to `deepseek-flash` as numbers only (no asset, no date,
+  so it cannot recall the outcome): it answered ~0.50 every time (sd 0.048),
+  accuracy 47.6% against a 53.2% base rate, Brier 0.2557 vs 0.2490 climatology.
+  3 cents and 6 minutes. The 10-parameter regression beat it. The LLM's job is
+  research and judgement, where each claim can be graded — not calibrated
+  probabilities. Reproduce with `python3 tools/llm_forecast.py`.
+- `docs/EXPERIMENTS.md` is where falsified ideas go, with their numbers, so
+  nobody re-runs them. Two branches are closed there (regime training, LLM
+  forecasting); features and labels remain open.
 - Backtests are linear again. `decide` gets a growing prefix each bar to make
   lookahead impossible, and every indicator series was being rebuilt per prefix
   (O(n²)): 300 bars took 1s, 4,000 took 45s. The series are trailing-window

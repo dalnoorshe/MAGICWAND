@@ -277,3 +277,4 @@
 [autopilot 20:23:01] tick 4: research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by news; single-source veto declined from derivatives | strategy 'sol_capitulation
 [autopilot 17:28:15] autopilot started
 [autopilot 17:28:51] tick 1: research: 5/5 readers reported; evidence -0.14; coverage 94% of sources; single-source veto declined from derivatives | strategy 'sol_stretched_bear_rip_revert'
+[autopilot 17:44:21] tick 2: research: 5/5 readers reported; evidence -0.14; coverage 93% of sources; single-source veto declined from derivatives | strategy 'sol_extreme_fear_slow_grind_re

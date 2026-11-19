@@ -930,8 +930,15 @@ malformed (it compared against a hard 0/1 prediction, Brier 0.448). The baseline
 is now the base rate, and `beats_base` requires better probabilities **and**
 better-than-coin-flip direction.
 
-On 5.5 months of hourly bars (3,733 out-of-sample forecasts) it is still **no
-skill**: accuracy 52.4% vs 50.5% climatology, but Brier 0.2526 vs 0.2500 and
+The obvious alternative — ask the large model to forecast — is scored too:
+`python3 tools/llm_forecast.py` gives `deepseek-flash` 250 historical setups as
+numbers only (no asset, no date, so memory cannot help) and asks for a
+probability. It answered ~0.50 every time (sd 0.048), scored **47.6% accuracy
+against a 53.2% base rate** and Brier 0.2557 against 0.2490 for climatology. The
+10-parameter regression beat it. See `docs/EXPERIMENTS.md`.
+
+On 5.5 months of hourly bars (3,733 out-of-sample forecasts) the trained model is
+still **no skill**: accuracy 52.4% vs 50.5% climatology, but Brier 0.2526 vs 0.2500 and
 uncalibrated at both extremes. Training a separate model per volatility regime
 — the obvious next idea — is **worse**, not better:
 

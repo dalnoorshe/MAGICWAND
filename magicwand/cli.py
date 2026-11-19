@@ -439,14 +439,92 @@ def cmd_compose(cfg: Config, args) -> int:
     return 0 if result.passed else 1
 
 
+def _forecast_sweep(cfg: Config, args, bars, symbol: str) -> int:
+    """Label x feature-group matrix, on one command, one page.
+
+    This is the experiment that decides whether better INPUTS buy skill. Every
+    cell is scored the same way — Brier against its own label's climatology —
+    because a triple-barrier label has a different base rate from a direction
+    label, and comparing them to each other would be meaningless.
+    """
+    from . import forecast as fc, features as feat_mod
+
+    all_groups = ("cross", "session", "funding")
+    combos: list[tuple[str, ...]] = [()]
+    for g in all_groups:
+        combos.append(tuple(list(all_groups)[:list(all_groups).index(g) + 1]))
+    # Contexts are shared per group so nothing is fetched twice.
+    ctx_cache: dict[tuple[str, ...], object] = {}
+    for groups in combos:
+        if groups:
+            print(f"  loading context for {groups} …", flush=True)
+            ctx_cache[groups] = feat_mod.build_context(
+                symbol, cfg.market.timeframe, bars, groups)
+
+    print()
+    print(f"  FEATURE / LABEL SWEEP — {symbol} @ {cfg.market.timeframe}, "
+          f"{len(bars)} bars, horizon {args.horizon}")
+    print("  " + "-" * 84)
+    print(f"  {'label':10s} {'features':22s} {'n':>5s} {'acc':>7s} "
+          f"{'base':>7s} {'brier':>8s} {'climo':>8s}  verdict")
+    rows_out = []
+    for label in ("direction", "triple"):
+        for groups in combos:
+            ev, _tail = fc.walk_forward(
+                bars, horizon=args.horizon, min_train=args.min_train,
+                block=args.block, label=label, groups=groups,
+                ctx=ctx_cache.get(groups),
+                barrier_atr=args.barrier_atr)
+            name = ",".join(groups) if groups else "price only"
+            if ev is None:
+                print(f"  {label:10s} {name:22s}   — not enough data")
+                continue
+            verdict = "BEATS" if ev.beats_base else ("climo+" if ev.brier <
+                                                    ev.base_brier else "no skill")
+            print(f"  {label:10s} {name:22s} {ev.n:5d} {ev.accuracy:7.1%} "
+                  f"{max(ev.base_rate, 1 - ev.base_rate):7.1%} "
+                  f"{ev.brier:8.4f} {ev.base_brier:8.4f}  {verdict}")
+            rows_out.append({"label": label, "groups": name, "n": ev.n,
+                             "accuracy": ev.accuracy, "brier": ev.brier,
+                             "base_brier": ev.base_brier,
+                             "beats": ev.beats_base})
+    print()
+    best = min(rows_out, key=lambda r: r["brier"] - r["base_brier"],
+               default=None)
+    if best:
+        print(f"  closest to skill: {best['label']} / {best['groups']} "
+              f"(Brier {best['brier']:.4f} vs {best['base_brier']:.4f})")
+    print()
+    return 0
+
+
 def cmd_forecast(cfg: Config, args) -> int:
     """Train a trend model walk-forward and report whether it beats the base rate."""
     symbol = args.symbol or cfg.market.symbol
     exchange = args.exchange or cfg.market.exchange
     bars = data_mod.fetch(exchange, symbol, cfg.market.timeframe,
                           max(args.candles, 400), seed=cfg.seed)
+    groups = tuple(g.strip() for g in getattr(args, "groups", "").split(",")
+                   if g.strip())
+    for g in groups:
+        if g not in forecast_mod.feature_names(("cross", "session", "funding")) and \
+                g not in ("cross", "session", "funding"):
+            print(f"unknown feature group {g!r}")
+            return 2
+    ctx = None
+    if groups:
+        from . import features as feat_mod
+        print(f"  loading context for {groups} …", flush=True)
+        ctx = feat_mod.build_context(symbol, cfg.market.timeframe, bars, groups)
+
+    if getattr(args, "sweep", False):
+        return _forecast_sweep(cfg, args, bars, symbol)
+
+    stats: dict = {}
     ev, tail = forecast_mod.walk_forward(
-        bars, horizon=args.horizon, min_train=args.min_train, block=args.block)
+        bars, horizon=args.horizon, min_train=args.min_train, block=args.block,
+        label=args.label, groups=groups, ctx=ctx,
+        barrier_atr=args.barrier_atr, stats=stats)
     print()
     print(f"  TREND FORECAST — {symbol} @ {cfg.market.timeframe}, "
           f"horizon {args.horizon} bars")
@@ -456,6 +534,13 @@ def cmd_forecast(cfg: Config, args) -> int:
               f"(need {args.min_train + args.block}+)")
         return 2
     print(f"  {ev.summary()}")
+    if ev.groups != "price" or ev.label != "direction":
+        print(f"  label {ev.label} · features {ev.groups}")
+    if stats:
+        extra = ", ".join(f"{k}={v}" for k, v in sorted(stats.items())
+                          if k not in ("n",))
+        if extra:
+            print(f"  samples {stats.get('n')} · {extra}")
     print(f"  log loss {ev.log_loss:.4f} · base rate {ev.base_rate:.1%}")
     print("  calibration (predicted vs actual):")
     for row in ev.calibration:
@@ -635,6 +720,16 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--horizon", type=int, default=6)
     fc.add_argument("--min-train", type=int, default=200)
     fc.add_argument("--block", type=int, default=50)
+    fc.add_argument("--label", choices=["direction", "triple"],
+                    default="direction",
+                    help="direction: will price be higher? triple: was a "
+                         "tradable move hit before the stop?")
+    fc.add_argument("--groups", default="",
+                    help="extra feature groups, comma separated: "
+                         "cross,session,funding")
+    fc.add_argument("--barrier-atr", type=float, default=1.0)
+    fc.add_argument("--sweep", action="store_true",
+                    help="run the label x feature-group matrix and compare")
     fc.add_argument("--by-regime", action="store_true",
                     help="fit a separate model per volatility regime and compare")
     fc.add_argument("--min-regime-train", type=int, default=60)

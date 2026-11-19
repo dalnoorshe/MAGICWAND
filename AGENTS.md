@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 464 tests
+python3 -m unittest discover -s tests -v  # 477 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -121,6 +121,7 @@ These were each learned by breaking them. Do not "improve" them away.
 | `magicwand/account.py` | broker → paper → config balance resolution |
 | `magicwand/chat.py` + `web.py` | read-only operator chat with search/fetch |
 | `magicwand/forecast.py` | walk-forward trend model, purged, honestly scored |
+| `magicwand/features.py` | cross-asset / session / funding features + triple-barrier labels |
 | `magicwand/compose.py` | strategy grammar: composed ideas, same gate |
 | `docs/PLAN.md` | deferred work, each with its trigger |
 | `docs/EXPERIMENTS.md` | falsified ideas with their numbers — read before retrying |
@@ -129,7 +130,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 464 tests, 0 audit gaps, 23 audit passes.
+- 477 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -174,9 +175,21 @@ These were each learned by breaking them. Do not "improve" them away.
   3 cents and 6 minutes. The 10-parameter regression beat it. The LLM's job is
   research and judgement, where each claim can be graded — not calibrated
   probabilities. Reproduce with `python3 tools/llm_forecast.py`.
+- **Better inputs did not buy skill either — they made it worse.** Cross-asset
+  (BTC/ETH returns, BTC-SOL correlation, relative strength), session (hour-of-day)
+  and funding (rate, z-score, change) added cumulatively on 4,000 bars: Brier
+  0.2531 → 0.2578 → 0.2592 → 0.2641 for direction, and 0.2511 → 0.2562 → 0.2571
+  → 0.2588 for triple-barrier. Six monotone degradations = overfitting, not a
+  bug. The triple label is the best-posed question found so far (0.2511, 52.0%)
+  but still loses to climatology. The bottleneck is the SAMPLE: 166 days ≈ 600
+  semi-independent outcomes, and 19 columns cannot learn from that. Reproduce
+  with `wand.py forecast --sweep`. New feature modules live in
+  `magicwand/features.py` (causal, timestamp-aligned, holes are dropped not
+  imputed).
 - `docs/EXPERIMENTS.md` is where falsified ideas go, with their numbers, so
-  nobody re-runs them. Two branches are closed there (regime training, LLM
-  forecasting); features and labels remain open.
+  nobody re-runs them. Closed there: regime training, LLM forecasting, better
+  features, better labels. Open: more history, higher timeframes, longer
+  horizons, calibration.
 - Backtests are linear again. `decide` gets a growing prefix each bar to make
   lookahead impossible, and every indicator series was being rebuilt per prefix
   (O(n²)): 300 bars took 1s, 4,000 took 45s. The series are trailing-window

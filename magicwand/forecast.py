@@ -220,6 +220,8 @@ class Evaluation:
     base_accuracy: float
     calibration: list[dict]
     by_regime: dict
+    label: str = "direction"
+    groups: str = "price"
 
     @property
     def beats_base(self) -> bool:
@@ -243,18 +245,102 @@ class Evaluation:
                 f"{verdict}")
 
 
-def build_dataset(bars: list[Bar], horizon: int = 6) -> tuple[list[list[float]], list[int], list[int]]:
+LABELS = ("direction", "triple")
+
+
+def feature_names(groups: tuple[str, ...] = ()) -> list[str]:
+    """The full column order: price features first, then requested groups."""
+    from . import features as feat_mod
+    names = list(FEATURES)
+    for g in groups:
+        names.extend(feat_mod.GROUPS.get(g, ()))
+    return names
+
+
+def triple_barrier(bars: list[Bar], i: int, horizon: int,
+                   barrier_atr: float = 1.0) -> tuple[Optional[int], str]:
+    """Did price hit +k*ATR before -k*ATR, within the horizon?
+
+    Returns (label, note). `label` is 1 (upper first), 0 (lower first) or None
+    when it cannot be decided honestly — and `note` says which happened:
+
+        upper / lower      a barrier was touched first
+        both_same_bar      both touched inside one bar; the order is unknowable
+                           from OHLC, so the bar's own direction decides
+        no_barrier         neither touched; the terminal sign decides
+
+    This is a *tradability* label, not a direction label: it asks whether a move
+    worth capturing happened before the stop would have taken you out.
+    """
+    a = _atr_at(bars, 14, i)
+    if not a or a <= 0:
+        return None, "no_atr"
+    entry = bars[i].close
+    up = entry + barrier_atr * a
+    dn = entry - barrier_atr * a
+    for j in range(i + 1, min(i + horizon, len(bars) - 1) + 1):
+        hi, lo = bars[j].high, bars[j].low
+        hit_up, hit_dn = hi >= up, lo <= dn
+        if hit_up and hit_dn:
+            return (1 if bars[j].close >= bars[j].open else 0), "both_same_bar"
+        if hit_up:
+            return 1, "upper"
+        if hit_dn:
+            return 0, "lower"
+    end = bars[min(i + horizon, len(bars) - 1)].close
+    return (1 if end > entry else 0), "no_barrier"
+
+
+def build_dataset(bars: list[Bar], horizon: int = 6, label: str = "direction",
+                  groups: tuple[str, ...] = (), ctx=None,
+                  barrier_atr: float = 1.0,
+                  stats: Optional[dict] = None) -> tuple[list[list[float]], list[int], list[int]]:
+    """Rows, labels and bar indices for walk-forward training.
+
+    Extra feature groups are optional and any bar missing one is DROPPED rather
+    than imputed. A missing BTC print or a funding rate that had not been
+    published yet is a hole in the evidence, and filling it with a guess is how
+    a backtest learns something the market never showed.
+    """
+    from . import features as feat_mod
+    extra_keys: list[str] = []
+    for g in groups:
+        extra_keys.extend(feat_mod.GROUPS.get(g, ()))
     rows: list[list[float]] = []
     ys: list[int] = []
     idxs: list[int] = []
+    counts: dict[str, int] = {}
+    dropped = 0
     for i in range(len(bars) - horizon):
         f = features_at(bars, i)
         if f is None:
             continue
-        future = bars[i + horizon].close
-        rows.append([f[k] for k in FEATURES])
-        ys.append(1 if future > bars[i].close else 0)
+        row = [f[k] for k in FEATURES]
+        if extra_keys:
+            if ctx is None:
+                raise ValueError("feature groups need a Context")
+            ex = feat_mod.extras(bars, i, ctx, groups)
+            if any(k not in ex for k in extra_keys):
+                dropped += 1
+                continue
+            row.extend(ex[k] for k in extra_keys)
+        if label == "triple":
+            y, note = triple_barrier(bars, i, horizon, barrier_atr)
+            if y is None:
+                dropped += 1
+                continue
+            counts[note] = counts.get(note, 0) + 1
+        elif label == "direction":
+            y = 1 if bars[i + horizon].close > bars[i].close else 0
+        else:
+            raise ValueError(f"unknown label {label!r}")
+        rows.append(row)
+        ys.append(y)
         idxs.append(i)
+    if stats is not None:
+        stats.update(counts)
+        stats["dropped"] = dropped
+        stats["n"] = len(rows)
     return rows, ys, idxs
 
 
@@ -306,7 +392,10 @@ REGIMES = ("calm", "normal", "volatile")
 
 def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
                  block: int = 50, by_regime: bool = False,
-                 min_regime_train: int = 60
+                 min_regime_train: int = 60, label: str = "direction",
+                 groups: tuple[str, ...] = (), ctx=None,
+                 barrier_atr: float = 1.0,
+                 stats: Optional[dict] = None
                  ) -> tuple[Optional[Evaluation], list[Forecast]]:
     """Train on the past, predict a block, roll forward. No peeking.
 
@@ -317,7 +406,9 @@ def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
     divides the training data by three, so a regime below `min_regime_train`
     falls back to the pooled model and says so rather than pretending.
     """
-    rows, ys, idxs = build_dataset(bars, horizon)
+    rows, ys, idxs = build_dataset(bars, horizon, label=label, groups=groups,
+                                   ctx=ctx, barrier_atr=barrier_atr,
+                                   stats=stats)
     if len(rows) < min_train + block:
         return None, []
 
@@ -374,6 +465,8 @@ def walk_forward(bars: list[Bar], horizon: int = 6, min_train: int = 200,
         base_brier=climo_brier,
         base_accuracy=sum(1 for y in outs if y == majority) / len(outs),
         calibration=_calibration(ps, outs),
+        label=label,
+        groups=",".join(groups) if groups else "price",
         # Per regime, compared against that regime's OWN climatology: a regime
         # that is 60% "up" makes 60% accuracy worthless, exactly as a whole
         # sample that falls 76% of the time makes a bearish reader worthless.

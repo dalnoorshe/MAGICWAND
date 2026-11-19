@@ -99,3 +99,46 @@ $0.03 per 250 forecasts and hours of wall-clock time to do the numeric job.
 **Conclusion.** Close it. The LLM reads the world, forms hypotheses, argues and
 vetoes — jobs it is good at and where its output can be graded per claim. It does
 not produce calibrated probabilities, and no prompt fixes a missing edge.
+
+---
+
+## 4. Better inputs: cross-asset, session, funding — and triple-barrier labels — **NEGATIVE**
+
+**Question.** The model had nine price-only features squeezed out of one symbol's
+candles. BTC leads alts, funding says how crowded the leverage is, and
+hour-of-day says who is awake. Does adding that — and asking a better-posed
+question (did a *tradable* move happen before the stop?) — buy skill?
+
+**Method.** `wand.py forecast --sweep`. Feature groups added cumulatively, both
+label types, 4,000 hourly SOL-USD bars, walk-forward with purge intact, each cell
+scored against its own label's climatology.
+
+| label | features | n | acc | base | Brier | climo | verdict |
+|---|---|---|---|---|---|---|---|
+| direction | price only | 3633 | 51.0% | 50.6% | 0.2531 | 0.2500 | no skill |
+| direction | +cross | 3633 | 50.5% | 50.6% | 0.2578 | 0.2500 | no skill |
+| direction | +session | 3633 | 49.9% | 50.6% | 0.2592 | 0.2500 | no skill |
+| direction | +funding | 3600 | 49.6% | 50.7% | 0.2641 | 0.2500 | no skill |
+| **triple** | **price only** | 3633 | **52.0%** | 50.9% | **0.2511** | 0.2499 | no skill |
+| triple | +cross | 3633 | 51.7% | 50.9% | 0.2562 | 0.2499 | no skill |
+| triple | +session | 3633 | 51.3% | 50.9% | 0.2571 | 0.2499 | no skill |
+| triple | +funding | 3600 | 50.9% | 51.0% | 0.2588 | 0.2499 | no skill |
+
+**Result.** Two separate findings.
+
+1. **The triple-barrier label is a better-posed question than direction** — best
+   Brier of any cell (0.2511 vs 0.2531) and the best accuracy (52.0%). It is
+   still worse than climatology, so it does not pass, but the label is not the
+   problem; it is the closest thing to a signal found so far.
+2. **Every added feature group made it worse, monotonically, on both labels.**
+   Direction: 0.2531 → 0.2578 → 0.2592 → 0.2641. Triple: 0.2511 → 0.2562 →
+   0.2571 → 0.2588. Six consecutive degradations is the signature of pure
+   overfitting: real columns, no incremental signal, more variance to fit.
+
+**Conclusion.** On 166 days of 1h bars with a 6-bar horizon — roughly 600
+semi-independent outcomes — a 19-column model cannot learn anything the market
+is not handing out. The bottleneck is now the SAMPLE, not the feature list or
+the label. Next: years of history (Binance pages 1,000 bars per request, so
+20,000+ hourly bars is a few seconds of fetching), higher timeframes, and longer
+horizons. Adding another clever feature to 166 days would be the same mistake
+with a new name.

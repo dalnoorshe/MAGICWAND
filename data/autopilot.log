@@ -278,3 +278,9 @@
 [autopilot 17:28:15] autopilot started
 [autopilot 17:28:51] tick 1: research: 5/5 readers reported; evidence -0.14; coverage 94% of sources; single-source veto declined from derivatives | strategy 'sol_stretched_bear_rip_revert'
 [autopilot 17:44:21] tick 2: research: 5/5 readers reported; evidence -0.14; coverage 93% of sources; single-source veto declined from derivatives | strategy 'sol_extreme_fear_slow_grind_re
+[autopilot 17:59:52] tick 3: research: 5/5 readers reported; evidence -0.14; coverage 94% of sources; single-source veto declined from derivatives | strategy 'sol_fast_breakout_tight_stop' 
+[autopilot 18:16:57] tick 4: research: 5/5 readers reported; evidence -0.11; coverage 93% of sources | idea 'sol_fast_trend_fear_relief' refused: near-duplicate of sol_oi_flush_trend_resume
+[autopilot 18:32:27] tick 5: research: 5/5 readers reported; evidence -0.13; coverage 93% of sources | strategy 'sol_sma_persistent_downtrend_short' rejected: REJECTED: not profitable at re
+[autopilot 18:47:58] tick 6: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.18; coverage 94% of sources; single-source veto declined from derivatives | idea 'sol_tren
+[autopilot 19:03:37] tick 7: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.07; coverage 93% of sources | strategy 'sol_fear_rip_short_trend' rejected: REJECTED: not 
+[autopilot 19:19:08] tick 8: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by onchain | strategy 'sol_fear_grind_slow_revert' rejec

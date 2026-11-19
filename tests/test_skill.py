@@ -28,9 +28,10 @@ from magicwand.research_loop import (MIN_WINDOWS, agent_track_record,
 
 def _ledger(rows) -> Ledger:
     """rows: (agent, expected_move, realized_move, horizon_hours)"""
-    d = tempfile.TemporaryDirectory()
-    led = Ledger(Path(d.name) / "ledger.jsonl")
-    led._tmpdir = d  # type: ignore[attr-defined]  keep it alive
+    # mkdtemp, not TemporaryDirectory: holding the object on the Ledger looked
+    # tidy but let it be collected implicitly, which sprayed ResourceWarnings
+    # through the test output.
+    led = Ledger(Path(tempfile.mkdtemp()) / "ledger.jsonl")
     for i, (agent, expected, realized, horizon) in enumerate(rows):
         cid = f"c{i}"
         led.append("agent_claim", {

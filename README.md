@@ -77,7 +77,7 @@ wishes but cannot lie about what it granted.
 
 ```bash
 ./start.sh                                 # ONE COMMAND: console + browser
-python3 -m unittest discover -s tests -v   # 458 tests, no dependencies
+python3 -m unittest discover -s tests -v   # 477 tests, no dependencies
 python3 wand.py data                        # fetch real SOL/USD hourly bars
 python3 wand.py reality                     # the honest verdict
 python3 wand.py step                        # one paper tick, writes the ledger
@@ -929,6 +929,23 @@ The first version of this tool *claimed* an edge because its baseline was
 malformed (it compared against a hard 0/1 prediction, Brier 0.448). The baseline
 is now the base rate, and `beats_base` requires better probabilities **and**
 better-than-coin-flip direction.
+
+Adding the inputs a crypto bar actually depends on — BTC/ETH lead-lag, rolling
+BTC-SOL correlation, funding rate and its z-score, hour-of-day — made it **worse
+on every single cell**, and so did a triple-barrier label:
+
+```bash
+python3 wand.py forecast --sweep --candles 4000 --exchange binance
+# direction  price only  Brier 0.2531   +cross 0.2578  +session 0.2592  +funding 0.2641
+# triple     price only  Brier 0.2511   +cross 0.2562  +session 0.2571  +funding 0.2588
+# climatology in every row: 0.2500
+```
+
+Six consecutive degradations is the signature of overfitting, not of a bug: real
+columns, no incremental signal, more variance to fit. The triple label is the
+best-posed question so far (0.2511, accuracy 52.0%) and is still not enough. The
+bottleneck has moved from the feature list to the **sample** — 166 days of hourly
+bars is roughly 600 semi-independent outcomes.
 
 The obvious alternative — ask the large model to forecast — is scored too:
 `python3 tools/llm_forecast.py` gives `deepseek-flash` 250 historical setups as

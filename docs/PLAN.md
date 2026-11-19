@@ -116,11 +116,15 @@ what a small feature set on a nearly-efficient 1h series looks like.
 **What would give it a real chance** (each is a contained experiment, and each
 must be scored the same way):
 
-1. **Better features** — funding rate, open-interest change, taker buy/sell
-   imbalance, BTC dominance, cross-asset lead-lag (BTC usually leads alts),
-   time-of-day/session effects. The bars alone throw away most of the signal.
-2. **Better labels** — triple-barrier (did it hit +x% before −y%?) instead of
-   fixed-horizon direction, which is noisy and pays no attention to path.
+1. ~~**Better features**~~ — **TESTED, NEGATIVE.** Cross-asset (BTC/ETH
+   returns, BTC-SOL correlation, relative strength), session (hour-of-day) and
+   funding (rate, z-score, change) were added cumulatively and each one made
+   Brier *worse*, monotonically, on both labels: 0.2531 → 0.2578 → 0.2592 →
+   0.2641. Real columns, no incremental signal, variance to overfit.
+2. ~~**Better labels**~~ — **TESTED, HALF-NEGATIVE.** Triple-barrier is the
+   better-posed question: it gave the best cell of the sweep (Brier 0.2511,
+   accuracy 52.0% vs direction 0.2531/51.0%). Still worse than climatology, so it
+   does not pass — but the label is not what is holding this back.
 3. ~~**Regime-conditional models**~~ — **TESTED, NEGATIVE.** One fit per regime
    (calm/normal/volatile, causal ATR-percentile labels, purge intact) on 4,000
    hourly bars: overall Brier **0.2593 vs 0.2528 pooled**, and two of the three
@@ -138,11 +142,12 @@ must be scored the same way):
 **What is NOT the answer:** a bigger model. On this data a deep net would fit
 noise more efficiently, and the Brier score would say so.
 
-**Trigger to continue:** features (1) and labels (2) remain the only untested
-items with plausible expected value. Regime conditioning is now closed, and a
-bigger model is still not the answer. The evaluation machinery is cheap enough
-to run these experiments: 4,000 bars walk-forward in ~2 minutes, a backtest in
-0.08s.
+**Trigger to continue:** the bottleneck is now the sample, not the model. 166
+days of 1h bars with a 6-bar horizon is roughly 600 semi-independent outcomes,
+and a 19-column model cannot learn from that. Next experiments, in order: years
+of history (Binance pages 1,000 bars per request — 20,000 hourly bars is a few
+seconds), then higher timeframes, then longer horizons. Do not add another
+feature to 166 days.
 
 ---
 

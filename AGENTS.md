@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 483 tests
+python3 -m unittest discover -s tests -v  # 492 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -122,6 +122,7 @@ These were each learned by breaking them. Do not "improve" them away.
 | `magicwand/chat.py` + `web.py` | read-only operator chat with search/fetch |
 | `magicwand/forecast.py` | walk-forward trend model, purged, honestly scored |
 | `magicwand/features.py` | cross-asset / session / funding features + triple-barrier labels |
+| `magicwand/carry.py` | funding-carry simulation: two legs, basis, four-leg fees |
 | `magicwand/compose.py` | strategy grammar: composed ideas, same gate |
 | `docs/PLAN.md` | deferred work, each with its trigger |
 | `docs/EXPERIMENTS.md` | falsified ideas with their numbers — read before retrying |
@@ -130,7 +131,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 483 tests, 0 audit gaps, 23 audit passes.
+- 492 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -204,11 +205,17 @@ These were each learned by breaking them. Do not "improve" them away.
   `binance_candles` used Coinbase's granularity map for bar length and that map
   has no 4h. Now `_BAR_SECONDS` (all venues) vs `_GRANULARITY` (Coinbase
   whitelist only).
+- **Funding carry is real but too small here.** 800 days, 2,400 funding periods:
+  SOL funding averages +0.135 bps per 8h, +325 bps total if you never churn. One
+  round trip costs 38 bps, and the mark-vs-spot basis has sd 84 bps. Perfect hold
+  = +1.5% a year (below risk-free, before exchange/margin/liquidation risk); any
+  churn rule = −19%. `wand.py carry`. Two bugs found by hand-checking both
+  flattered it: the short leg was booked as `M0/M1-1` instead of `1-M1/M0` (which
+  fabricates P&L from volatility), and the window-end close was never charged.
 - `docs/EXPERIMENTS.md` is where falsified ideas go, with their numbers, so
   nobody re-runs them. Closed: regime training, LLM forecasting, better
-  features, better labels, more history, timeframe/horizon. The remaining
-  direction is a different KIND of question — structural rather than predictive
-  (funding carry/basis, liquidation cascades), or a different market, or
+  features, better labels, more history, timeframe/horizon, funding carry.
+  Still open: liquidation-cascade reversion, a different market, and
   calibration as a post-process.
 - Backtests are linear again. `decide` gets a growing prefix each bar to make
   lookahead impossible, and every indicator series was being rebuilt per prefix

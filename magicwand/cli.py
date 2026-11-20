@@ -27,6 +27,8 @@ from . import runner
 from .config import Config
 from . import audit as audit_mod
 from . import compose as compose_mod
+from datetime import datetime, timezone
+
 from . import forecast as forecast_mod
 from . import integrations as integrations_mod
 from . import service as service_mod
@@ -599,6 +601,59 @@ def cmd_forecast(cfg: Config, args) -> int:
     return 0 if ev.beats_base else 1
 
 
+def cmd_carry(cfg: Config, args) -> int:
+    """Funding-rate carry: does the payment cover the cost of collecting it?"""
+    from . import carry as carry_mod
+
+    symbol = args.symbol or cfg.market.symbol
+    print(f"  loading funding history for {symbol} …", flush=True)
+    funding = carry_mod.funding_history(symbol, days=args.days)
+    if len(funding) < 10:
+        print("  not enough funding history (venue unreachable?)")
+        return 2
+    bars = data_mod.fetch("binance", symbol, "1h", max(args.candles, 400))
+    cc = carry_mod.CarryConfig(
+        lookback=args.lookback, entry_bps=args.entry_bps,
+        exit_bps=args.exit_bps, spot_fee_bps=args.spot_fee_bps,
+        perp_fee_bps=args.perp_fee_bps, slip_bps_leg=args.slip_bps_leg)
+    res = carry_mod.run_carry(funding, bars, cc)
+    if res is None:
+        print("  could not simulate (missing prices)")
+        return 2
+    first = datetime.fromtimestamp(funding[0]["ts"] / 1000, tz=timezone.utc)
+    last = datetime.fromtimestamp(funding[-1]["ts"] / 1000, tz=timezone.utc)
+    span_days = max(1.0, (funding[-1]["ts"] - funding[0]["ts"]) / 86_400_000.0)
+    print()
+    print(f"  FUNDING CARRY — {symbol} @ 8h funding, {span_days:.0f} days "
+          f"({first:%Y-%m-%d} → {last:%Y-%m-%d})")
+    print("  " + "-" * 74)
+    print(f"  rule             enter when {args.lookback}-period avg funding "
+          f"≥ {args.entry_bps:g} bps, exit below {args.exit_bps:g} bps")
+    print(f"  funding periods  {res.periods}  ·  held {res.periods_held} "
+          f"({res.periods_held / max(1, res.periods):.0%} of the time)  ·  "
+          f"{res.entries} round trips")
+    print(f"  funding paid     {res.funding_bps:+9.2f} bps")
+    print(f"  basis P&L        {res.basis_bps:+9.2f} bps   (spot vs perp marks)")
+    print(f"  costs            {res.fees_bps:-9.2f} bps   "
+          f"({res.round_trip_cost_bps:.0f} bps per round trip, 4 legs)")
+    print(f"  net              {res.net_bps:+9.2f} bps   "
+          f"= {res.net_pct:+.2f}% on notional  (annualised "
+          f"{res.annualised_pct:+.1f}%)")
+    print(f"  max drawdown     {res.max_drawdown_pct:.2f}%   worst period "
+          f"{res.worst_period_bps:+.2f} bps")
+    print(f"  buy & hold spot  {res.spot_return_pct:+.1f}% over the same window")
+    print(f"  break-even       {res.breakeven_periods or float('nan'):.0f} "
+          f"funding periods of average size to pay one round trip "
+          f"(avg hold {res.avg_hold_periods:.1f})")
+    print(f"  verdict          {res.verdict()}")
+    print()
+    print("  Not modelled: perp-leg liquidation, custody/exchange risk, margin, "
+          "or two venues.")
+    print("  Returns are per unit of NOTIONAL, not per unit of capital at risk.")
+    print()
+    return 0 if res.net_bps > 0 else 1
+
+
 def cmd_audit(cfg: Config, args) -> int:
     """Adversarial self-audit: run the scenarios and show what breaks."""
     results = audit_mod.run_all(angle=args.angle)
@@ -752,6 +807,19 @@ def main(argv: list[str] | None = None) -> int:
                     help="fit a separate model per volatility regime and compare")
     fc.add_argument("--min-regime-train", type=int, default=60)
     fc.set_defaults(fn=cmd_forecast)
+
+    ca = sub.add_parser("carry",
+                        help="funding-rate carry: does the payment cover the cost?")
+    ca.add_argument("--symbol", default="")
+    ca.add_argument("--days", type=int, default=800)
+    ca.add_argument("--candles", type=int, default=25000)
+    ca.add_argument("--lookback", type=int, default=3)
+    ca.add_argument("--entry-bps", type=float, default=1.0)
+    ca.add_argument("--exit-bps", type=float, default=0.0)
+    ca.add_argument("--spot-fee-bps", type=float, default=10.0)
+    ca.add_argument("--perp-fee-bps", type=float, default=5.0)
+    ca.add_argument("--slip-bps-leg", type=float, default=2.0)
+    ca.set_defaults(fn=cmd_carry)
 
     au = sub.add_parser("audit", help="adversarial scenario self-audit")
     au.add_argument("--verbose", action="store_true")

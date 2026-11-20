@@ -212,3 +212,50 @@ on SOL does not predict its own next day, and the honest conclusion is that this
 edge is not in this data at this resolution. What remains is a different KIND of
 question — structural rather than predictive (funding carry / basis, liquidation
 cascades) — or a different market.
+
+---
+
+## 7. Funding-rate carry — **NEGATIVE** (but the first question of a different kind)
+
+**Question.** Every branch so far asked "which way will price go". This one asks
+whether you can be paid for taking the other side of a persistent imbalance:
+hold spot long + perp short, collect the funding rate, have no view on price.
+
+**Method.** `wand.py carry` on 800 days of 8h funding (2,400 periods,
+2024-09 → 2026-11). Funding is collected on the perp leg at the published rate;
+both legs are marked separately so the basis is its own P&L line; fees are
+charged on all four legs of a round trip (0.10% spot + 0.05% perp taker, plus
+2 bps slippage per leg = 38 bps); decisions use only funding already published.
+
+| run | held | funding | basis | costs | net | annualised |
+|---|---|---|---|---|---|---|
+| enter ≥1bp avg, exit <0 | 25% | +499 bps | −1376 bps | −988 bps | **−1865 bps (−18.7%)** | −8.5% |
+| hold the whole window | 100% | +325 bps | +41 bps | −38 bps | **+328 bps (+3.3%)** | **+1.5%** |
+
+**What the data says.** SOL funding averaged **+0.135 bps per 8h** over the
+window — 62% of periods positive, **325 bps total across 800 days** if you never
+churn. One round trip costs 38 bps. Meanwhile the mark-vs-spot basis has a
+**standard deviation of 84 bps** and a range of −862 to +697 bps: every entry and
+exit is a coin flip on a move twice the size of the entire round-trip cost, and
+26 round trips turned +499 bps of funding into −1865 bps of P&L.
+
+**Conclusion.** The best possible case — perfect hold, no churn, no liquidation,
+no custody risk, one venue — is **+1.5% a year**, which is below the risk-free
+rate while carrying exchange and margin risk. Any realistic entry/exit rule
+destroys it. Carry is real in markets where funding is large and persistent; on
+SOL at this size it is not.
+
+**Two bugs found by hand-checking, both flattering the strategy:**
+
+1. The short perp leg was booked as `M0/M1 - 1` instead of `1 - M1/M0`. The
+   reciprocal measures the move against the *exit* notional, and by AM-GM the
+   two legs' ratios sum positive — so a delta-neutral position "earned" +2095 bps
+   of phantom basis while SOL fell 48%. That is the difference between a −19%
+   result and a +6% one.
+2. A position still open at the end of the window was never closed, hiding its
+   exit fee and final basis.
+
+Nine tests in `test_carry.py` now pin the arithmetic by hand: a neutral position
+must show zero basis P&L whether price crashes or rallies, a premium entry must
+be credited its convergence, the window-end close must be charged, and a funding
+spike cannot pull in an entry before it existed.

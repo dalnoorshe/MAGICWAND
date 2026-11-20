@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 492 tests
+python3 -m unittest discover -s tests -v  # 496 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -131,7 +131,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 492 tests, 0 audit gaps, 23 audit passes.
+- 496 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -212,6 +212,14 @@ These were each learned by breaking them. Do not "improve" them away.
   churn rule = −19%. `wand.py carry`. Two bugs found by hand-checking both
   flattered it: the short leg was booked as `M0/M1-1` instead of `1-M1/M0` (which
   fabricates P&L from volatility), and the window-end close was never charged.
+- **The 4×3 scan is the decisive one: 0/12 cells beat climatology.** `wand.py
+  scan` (markets × horizons, triple label, chance-corrected): zero cells beat
+  their Brier baseline where a coin flip would give ~6, zero at p<0.05 raw
+  (0.6 expected), none survive Bonferroni. Every cell is 0.0015–0.0037 worse
+  than its own climatology — the exact signature of a no-signal model paying a
+  parameter-fitting variance tax. That is now the strongest statement in the
+  repo: the price-action features carry nothing across BTC/ETH/PAXG/SOL at
+  6/24/72 bars. Test cells are correlated, so the correction is generous.
 - `docs/EXPERIMENTS.md` is where falsified ideas go, with their numbers, so
   nobody re-runs them. Closed: regime training, LLM forecasting, better
   features, better labels, more history, timeframe/horizon, funding carry.

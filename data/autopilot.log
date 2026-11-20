@@ -296,3 +296,5 @@
 [autopilot 17:00:12] autopilot started
 [autopilot 17:01:25] tick 1: research: 5/5 readers reported; evidence -0.48; coverage 95% of sources; VETO by derivatives, news; single-source veto declined from onchain, charts | strategy 
 [autopilot 17:16:59] tick 2: research: 5/5 readers reported; evidence -0.44; coverage 94% of sources; VETO by news, onchain; single-source veto declined from charts | idea 'sol_extreme_fear
+[autopilot 17:32:33] tick 3: graded 4 agent claim(s) | research: 5/5 readers reported; evidence -0.46; coverage 95% of sources; VETO by derivatives, news, onchain; single-source veto declin
+[autopilot 17:48:07] tick 4: graded 4 agent claim(s) | research: 5/5 readers reported; evidence -0.46; coverage 95% of sources; VETO by news, onchain; single-source veto declined from deriv

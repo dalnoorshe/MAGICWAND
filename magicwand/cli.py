@@ -601,6 +601,99 @@ def cmd_forecast(cfg: Config, args) -> int:
     return 0 if ev.beats_base else 1
 
 
+def _binom_p(k: int, n: int, p0: float) -> float:
+    """One-sided p-value that k successes out of n came from rate p0.
+
+    Normal approximation, which is fine at n in the thousands and keeps this
+    dependency-free. Used to ask whether a cell's accuracy is better than its
+    base rate by more than chance.
+    """
+    if n <= 0:
+        return 1.0
+    phat = k / n
+    se = (p0 * (1.0 - p0) / n) ** 0.5
+    if se <= 0:
+        return 1.0
+    z = (phat - p0) / se
+    # Abramowitz-style logistic approximation to the normal CDF tail.
+    t = 1.0 / (1.0 + 0.2316419 * abs(z))
+    d = 0.3989423 * pow(2.718281828, -z * z / 2.0)
+    prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t
+                                   * (-1.821256 + t * 1.330274))))
+    return prob if z > 0 else 1.0 - prob
+
+
+def cmd_scan(cfg: Config, args) -> int:
+    """Breadth, not cleverness: many markets x horizons, chance-corrected.
+
+    One hypothesis at a time has produced seven negatives and no usable power:
+    each cell rests on a few hundred semi-independent outcomes, so a "win" is
+    indistinguishable from luck. This runs the same honest evaluation across
+    every market and horizon the registry knows, then asks the only question a
+    grid can answer — does ANY cell beat chance by more than testing this many
+    cells would produce by accident?
+    """
+    from .markets import symbols as market_symbols
+    from . import forecast as fc
+
+    syms = ([x.strip() for x in args.symbols.split(",") if x.strip()]
+            if args.symbols else market_symbols())
+    horizons = [int(x) for x in args.horizons.split(",") if x.strip()]
+    print()
+    print(f"  SCAN — {len(syms)} markets x {len(horizons)} horizons, "
+          f"label {args.label}, {args.candles} bars")
+    print("  " + "-" * 88)
+    print(f"  {'market':10s} {'h':>4s} {'n':>6s} {'acc':>7s} {'base':>7s} "
+          f"{'edge':>7s} {'p':>7s} {'brier':>8s} {'climo':>8s} {'beats':>6s}")
+    cells = []
+    for sym in syms:
+        try:
+            bars = data_mod.fetch(args.exchange, sym, args.timeframe or "1h",
+                                  args.candles, seed=cfg.seed)
+        except Exception as e:  # noqa: BLE001 — a dead market is a row
+            print(f"  {sym:10s}   — no data: {type(e).__name__}")
+            continue
+        for h in horizons:
+            ev, _ = fc.walk_forward(bars, horizon=h, min_train=args.min_train,
+                                    block=args.block, label=args.label)
+            if ev is None:
+                print(f"  {sym:10s} {h:4d}   — not enough history")
+                continue
+            base = max(ev.base_rate, 1 - ev.base_rate)
+            k = round(ev.accuracy * ev.n)
+            p = _binom_p(k, ev.n, base)
+            edge = ev.accuracy - base
+            beats = "YES" if (ev.brier < ev.base_brier and edge > 0) else "no"
+            print(f"  {sym:10s} {h:4d} {ev.n:6d} {ev.accuracy:7.1%} "
+                  f"{base:7.1%} {edge:+7.1%} {p:7.3f} {ev.brier:8.4f} "
+                  f"{ev.base_brier:8.4f} {beats:>6s}")
+            cells.append({"market": sym, "horizon": h, "n": ev.n,
+                          "accuracy": ev.accuracy, "base": base, "edge": edge,
+                          "p": p, "brier": ev.brier,
+                          "base_brier": ev.base_brier})
+    print()
+    if not cells:
+        return 1
+    tested = len(cells)
+    threshold = 0.05 / tested           # Bonferroni; cells are NOT independent
+    winners = [c for c in cells if c["brier"] < c["base_brier"]]
+    raw = [c for c in cells if c["p"] < 0.05]
+    survived = [c for c in cells if c["p"] < threshold]
+    print(f"  cells tested        {tested}")
+    print(f"  beat climatology    {len(winners)}/{tested} on Brier "
+          f"(a coin flip would give about {tested // 2})")
+    print(f"  p < 0.05 raw        {len(raw)}  "
+          f"(expected by chance alone: ~{0.05 * tested:.1f})")
+    print(f"  survives Bonferroni {len(survived)}  (threshold p < {threshold:.4f})")
+    if survived:
+        print("  -> " + ", ".join(f"{c['market']}@{c['horizon']}" for c in survived))
+    else:
+        print("  -> nothing survives. Their windows overlap and the cells are "
+              "correlated, so even this is generous.")
+    print()
+    return 0
+
+
 def cmd_carry(cfg: Config, args) -> int:
     """Funding-rate carry: does the payment cover the cost of collecting it?"""
     from . import carry as carry_mod
@@ -807,6 +900,18 @@ def main(argv: list[str] | None = None) -> int:
                     help="fit a separate model per volatility regime and compare")
     fc.add_argument("--min-regime-train", type=int, default=60)
     fc.set_defaults(fn=cmd_forecast)
+
+    sc = sub.add_parser("scan",
+                        help="many markets x horizons, chance-corrected verdict")
+    sc.add_argument("--symbols", default="", help="default: the whole registry")
+    sc.add_argument("--horizons", default="6,24,72")
+    sc.add_argument("--label", choices=["direction", "triple"], default="triple")
+    sc.add_argument("--exchange", default="binance")
+    sc.add_argument("--timeframe", default="")
+    sc.add_argument("--candles", type=int, default=12000)
+    sc.add_argument("--min-train", type=int, default=600)
+    sc.add_argument("--block", type=int, default=1000)
+    sc.set_defaults(fn=cmd_scan)
 
     ca = sub.add_parser("carry",
                         help="funding-rate carry: does the payment cover the cost?")

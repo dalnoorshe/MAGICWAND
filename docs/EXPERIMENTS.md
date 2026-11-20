@@ -259,3 +259,48 @@ Nine tests in `test_carry.py` now pin the arithmetic by hand: a neutral position
 must show zero basis P&L whether price crashes or rallies, a premium entry must
 be credited its convergence, the window-end close must be charged, and a funding
 spike cannot pull in an entry before it existed.
+
+---
+
+## 8. Breadth instead of cleverness: 4 markets × 3 horizons — **NEGATIVE** (and this one is decisive)
+
+**Question.** Every experiment so far tested one hypothesis at a time and rested
+on a few hundred semi-independent outcomes, so a "win" could never be separated
+from luck. AlphaZero's real advantage was not smarter moves — it was millions of
+honest evaluations. We cannot buy insight, but we can buy **statistical power**
+by testing many cells at once and correcting for how many we tried.
+
+**Method.** `wand.py scan`: the whole market registry × horizons 6/24/72, triple
+barrier label, 12,000 bars each, walk-forward with purge intact. Each cell is
+scored against its own base rate, with a one-sided binomial p-value and a
+Bonferroni threshold at 0.05/12.
+
+| market | h | n | acc | base | edge | p | Brier | climo |
+|---|---|---|---|---|---|---|---|---|
+| BTC | 6 | 11,333 | 50.3% | 51.5% | −1.2% | 0.994 | 0.2519 | 0.2498 |
+| BTC | 24 | 11,315 | 49.9% | 51.0% | −1.2% | 0.994 | 0.2524 | 0.2499 |
+| BTC | 72 | 11,267 | 49.5% | 50.8% | −1.3% | 0.997 | 0.2524 | 0.2499 |
+| ETH | 6 | 11,333 | 50.8% | 50.6% | +0.1% | 0.382 | 0.2515 | 0.2500 |
+| ETH | 24 | 11,315 | 49.5% | 50.1% | −0.5% | 0.870 | 0.2526 | 0.2500 |
+| ETH | 72 | 11,267 | 49.6% | 50.1% | −0.6% | 0.890 | 0.2528 | 0.2500 |
+| PAXG | 6 | 11,333 | 50.3% | 50.2% | +0.1% | 0.448 | 0.2523 | 0.2500 |
+| PAXG | 24 | 11,315 | 50.0% | 50.3% | −0.3% | 0.726 | 0.2535 | 0.2500 |
+| PAXG | 72 | 11,267 | 50.7% | 50.3% | +0.4% | 0.204 | 0.2536 | 0.2500 |
+| SOL | 6 | 11,333 | 49.5% | 51.4% | −1.9% | 1.000 | 0.2520 | 0.2498 |
+| SOL | 24 | 11,315 | 49.3% | 51.4% | −2.1% | 1.000 | 0.2535 | 0.2498 |
+| SOL | 72 | 11,267 | 49.2% | 51.5% | −2.3% | 1.000 | 0.2537 | 0.2498 |
+
+**Result.** **Zero of twelve cells beat climatology** on Brier, where a coin flip
+would give about six. Zero cells reached p < 0.05 raw (0.6 expected by chance
+alone). Nothing survives correction, and the cells are correlated, so even that
+understates it.
+
+**What the pattern means.** Every cell sits 0.0015–0.0037 *worse* than its own
+climatology, uniformly. That is not noise around zero — it is the exact
+signature of a model with **no signal** paying a small variance tax for fitting
+parameters. Four of the most liquid crypto assets, three horizons, 2.3 years:
+the price-action features carry nothing.
+
+**Conclusion.** This closes the predictive question for this feature family on
+these assets, with statistical power rather than hope. If anything is to be
+found, it is not in bar-derived price features at these resolutions.

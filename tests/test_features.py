@@ -233,3 +233,30 @@ class TestBarLengths(unittest.TestCase):
         """The Coinbase whitelist must not grow just because Binance is happy."""
         from magicwand import data as data_mod
         self.assertNotIn("4h", data_mod._GRANULARITY)
+
+
+class TestScanStatistics(unittest.TestCase):
+    """The scan exists to stop us fooling ourselves with many tests.
+
+    If you try enough cells, one will look good. The only defence is to say how
+    many were tried and require the winner to clear that bar.
+    """
+
+    def test_a_coin_flip_is_not_significant(self):
+        from magicwand.cli import _binom_p
+        self.assertGreater(_binom_p(500, 1000, 0.5), 0.4)
+
+    def test_a_clear_win_is_significant(self):
+        from magicwand.cli import _binom_p
+        self.assertLess(_binom_p(550, 1000, 0.5), 0.001)
+
+    def test_a_loss_is_never_significant(self):
+        from magicwand.cli import _binom_p
+        self.assertGreater(_binom_p(450, 1000, 0.5), 0.99)
+
+    def test_the_threshold_tightens_with_more_cells(self):
+        from magicwand.cli import _binom_p
+        # 540/1000 clears an uncorrected 0.05 bar but not a 12-cell one.
+        p = _binom_p(540, 1000, 0.5)
+        self.assertLess(p, 0.05)
+        self.assertGreater(p, 0.05 / 12)

@@ -133,7 +133,25 @@ def cmd_step(cfg: Config, args) -> int:
     return 0
 
 
+def _apply_equity(cfg: Config, args) -> None:
+    """Apply an explicit paper balance, loudly and with a ledger note."""
+    equity = float(getattr(args, "equity", 0.0) or 0.0)
+    if equity <= 0:
+        return
+    from .ledger import Ledger
+    cfg.risk.equity = equity
+    try:
+        Ledger(Path(cfg.ledger.path)).append("note", {
+            "text": f"paper balance set to {equity:.2f} from the command line "
+                    f"(--equity); no broker is connected, so this is an "
+                    f"assumption, not a measurement"})
+    except Exception:  # noqa: BLE001 — a note must never block startup
+        pass
+    print(f"paper equity: {equity:.2f} (from --equity)")
+
+
 def cmd_loop(cfg: Config, args) -> int:
+    _apply_equity(cfg, args)
     print(f"paper loop: {cfg.market.symbol} @ {cfg.market.timeframe}, "
           f"every {args.interval}s. Ctrl-C to stop. No real money involved.")
     try:
@@ -334,6 +352,7 @@ def cmd_strategies(cfg: Config, args) -> int:
 
 
 def cmd_serve(cfg: Config, args) -> int:
+    _apply_equity(cfg, args)
     return serve_dashboard(root=".", host=args.host, port=args.port,
                            cfg=cfg, offline=args.offline,
                            autostart=args.auto, interval=args.interval)
@@ -623,6 +642,23 @@ def _binom_p(k: int, n: int, p0: float) -> float:
     return prob if z > 0 else 1.0 - prob
 
 
+def cmd_journal(cfg: Config, args) -> int:
+    """The 30-day paper scorecard: did it trade, and if not, why exactly?"""
+    from . import journal as journal_mod
+
+    j = journal_mod.build_journal(".", cfg, days=args.days)
+    print()
+    print(journal_mod.format_journal(j))
+    print()
+    if args.save:
+        out = Path("data") / "paper-journal.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(j, indent=2))
+        print(f"  saved to {out}")
+        print()
+    return 0
+
+
 def cmd_edge(cfg: Config, args) -> int:
     """Measure the current strategy's edge, then ask what size it justifies."""
     from .sizing import edge_from_trades, size_from_edge
@@ -873,6 +909,7 @@ def main(argv: list[str] | None = None) -> int:
 
     l = sub.add_parser("loop", help="run the paper bot repeatedly")
     l.add_argument("--interval", type=int, default=60)
+    l.add_argument("--equity", type=float, default=0.0)
     l.set_defaults(fn=cmd_loop)
 
     st = sub.add_parser("status", help="portfolio + scorecard")
@@ -938,6 +975,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="fit a separate model per volatility regime and compare")
     fc.add_argument("--min-regime-train", type=int, default=60)
     fc.set_defaults(fn=cmd_forecast)
+
+    jo = sub.add_parser("journal",
+                        help="paper-run scorecard: trades, refusals, outages")
+    jo.add_argument("--days", type=int, default=30)
+    jo.add_argument("--save", action="store_true")
+    jo.set_defaults(fn=cmd_journal)
 
     eg = sub.add_parser("edge",
                         help="measure the strategy edge and the size it justifies")
@@ -1042,6 +1085,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="start the autonomous scheduler immediately")
     sv.add_argument("--interval", type=int, default=900,
                     help="autopilot seconds between ticks (default 900)")
+    sv.add_argument("--equity", type=float, default=0.0,
+                    help="paper equity to run at (default: config). Logged, "
+                         "because a balance is an assumption until a broker "
+                         "confirms it")
     sv.set_defaults(fn=cmd_serve)
 
     args = p.parse_args(argv)

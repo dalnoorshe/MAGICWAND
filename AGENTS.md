@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 518 tests
+python3 -m unittest discover -s tests -v  # 525 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -132,6 +132,7 @@ These were each learned by breaking them. Do not "improve" them away.
 | `magicwand/features.py` | cross-asset / session / funding features + triple-barrier labels |
 | `magicwand/carry.py` | funding-carry simulation: two legs, basis, four-leg fees |
 | `magicwand/sizing.py` | Kelly on the conservative edge; zero when unproven |
+| `magicwand/journal.py` | paper-run scorecard; outages are not silence |
 | `magicwand/compose.py` | strategy grammar: composed ideas, same gate |
 | `docs/PLAN.md` | deferred work, each with its trigger |
 | `docs/EXPERIMENTS.md` | falsified ideas with their numbers — read before retrying |
@@ -140,7 +141,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 518 tests, 0 audit gaps, 23 audit passes.
+- 525 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -221,6 +222,15 @@ These were each learned by breaking them. Do not "improve" them away.
   churn rule = −19%. `wand.py carry`. Two bugs found by hand-checking both
   flattered it: the short leg was booked as `M0/M1-1` instead of `1-M1/M0` (which
   fabricates P&L from volatility), and the window-end close was never charged.
+- **The paper journal exists, and it catches outages.** `wand.py journal` reports
+  per-day ticks/research/trades/refusals and — the point — a day with no ledger
+  entries at all is labelled "NOTHING RAN — outage, not a refusal". Without
+  that, a run that was off for a week reads as six calm days of discipline. The
+  current real data shows 6 active days, 0 trades, 0 refusals, 234 research
+  cycles, $0.70 spent, and **3 outage days** (11-14, 11-15, 11-17).
+- **`--equity` on serve/loop** sets an explicit paper balance and writes a `note`
+  to the ledger saying it is an assumption, not a measurement. At $500 the
+  risk engine can clear the $5 venue minimum; at the default $50 it cannot.
 - **Sizing is now evidence-gated.** `wand.py edge` measures the strategy's
   per-trade edge and prints the size it justifies. On the default strategy:
   −114.5 bps mean, −165.4 bps conservative, 140 bps round trip → **0.00% of

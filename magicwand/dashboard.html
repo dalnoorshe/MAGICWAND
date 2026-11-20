@@ -1056,6 +1056,10 @@ function renderChart(s) {
       ? `redrawn every tick · ${bars.shown} closed ${bars.timeframe} bars · last bar `
         + `${String(bars.last_bar_utc).replace("T", " ").slice(0, 16)} UTC — `
         + `a ${bars.timeframe} candle only changes when the ${bars.timeframe} closes`
+        // The amber R/S dashes are pivots that already printed, labelled by
+        // where price is now. They are recomputed on every redraw, so a level
+        // vanishing means price broke it — not that a call was withdrawn.
+        + ` · amber R/S = past pivots, not signals; recomputed each redraw`
       : "";
   }
   if (!cv) {

@@ -91,7 +91,17 @@ class RiskEngine:
     # ---- the gate every entry must pass ----
 
     def size_entry(self, equity: float, price: float, stop_distance: float,
-                   open_positions: int, when: datetime) -> RiskDecision:
+                   open_positions: int, when: datetime,
+                   edge=None, per_trade_cost_bps: float = 0.0) -> RiskDecision:
+        """Sizing with an optional measured edge.
+
+        Without `edge` the engine sizes off the fixed ceilings alone — which is
+        what every version of this project did until now, and the reason those
+        ceilings had to be conservative: they had to stand in for evidence. With
+        an edge, the position is capped by Kelly on its PESSIMISTIC bound, so a
+        strategy that cannot demonstrate an edge sizes to zero instead of to a
+        cautious fraction.
+        """
         cfg = self.cfg
         if cfg.kill_switch:
             return RiskDecision(False, 0.0, "kill switch is enabled — all trading blocked")
@@ -119,6 +129,21 @@ class RiskEngine:
 
         qty = min(qty_risk, qty_cap)
         binding = "risk-per-trade" if qty_risk <= qty_cap else "max-position-size"
+
+        # Rule 0: if an edge has been measured, it CAPS the size. A strategy
+        # with no demonstrable edge must not open a position on the strength of
+        # a fixed ceiling alone.
+        edge_note = ""
+        if edge is not None:
+            from .sizing import size_from_edge
+            sizing = size_from_edge(edge, per_trade_cost_bps)
+            if not sizing.ok:
+                return RiskDecision(False, 0.0, sizing.reason)
+            qty_edge = equity * sizing.fraction / price
+            if qty_edge < qty:
+                qty = qty_edge
+                binding = "kelly-on-conservative-edge"
+            edge_note = f"; {sizing.reason}"
         notional = qty * price
 
         # Rule 3: below exchange minimum, skip. Never silently round up.
@@ -134,8 +159,9 @@ class RiskEngine:
 
         return RiskDecision(
             True, qty,
-            f"size {qty:.6f} (~{notional:.2f}) — risk {qty * stop_distance:.2f} "
-            f"({(qty * stop_distance) / equity:.2%} of equity), binding: {binding}",
+            f"size {qty:.6f} (~{qty * price:.2f}) — risk {qty * stop_distance:.2f} "
+            f"({(qty * stop_distance) / equity:.2%} of equity), binding: {binding}"
+            + edge_note,
         )
 
     def can_trade(self, when: datetime, equity_now: float) -> RiskDecision:

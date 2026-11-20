@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 496 tests
+python3 -m unittest discover -s tests -v  # 518 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -52,6 +52,14 @@ These were each learned by breaking them. Do not "improve" them away.
    bar timestamp advances.
 10. **Non-finite numbers are poison.** NaN comparisons are all `False`, so NaN
     slips past every `<` guard. Reject at Bar, RiskEngine and Broker.
+
+11. **An unproven edge sizes to zero.** `magicwand/sizing.py` sizes from the
+    LOWER confidence bound of the measured per-trade edge, net of costs, at
+    half-Kelly with a hard cap. When the bound does not cover costs the size is
+    exactly 0.0 — not small. `RiskEngine.size_entry(edge=...)` refuses the order
+    and says the arithmetic. Without an edge argument the old fixed ceilings
+    still apply, which is why they were conservative: they stood in for
+    evidence.
 
 ## Do not do this
 
@@ -123,6 +131,7 @@ These were each learned by breaking them. Do not "improve" them away.
 | `magicwand/forecast.py` | walk-forward trend model, purged, honestly scored |
 | `magicwand/features.py` | cross-asset / session / funding features + triple-barrier labels |
 | `magicwand/carry.py` | funding-carry simulation: two legs, basis, four-leg fees |
+| `magicwand/sizing.py` | Kelly on the conservative edge; zero when unproven |
 | `magicwand/compose.py` | strategy grammar: composed ideas, same gate |
 | `docs/PLAN.md` | deferred work, each with its trigger |
 | `docs/EXPERIMENTS.md` | falsified ideas with their numbers — read before retrying |
@@ -131,7 +140,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 496 tests, 0 audit gaps, 23 audit passes.
+- 518 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -212,6 +221,13 @@ These were each learned by breaking them. Do not "improve" them away.
   churn rule = −19%. `wand.py carry`. Two bugs found by hand-checking both
   flattered it: the short leg was booked as `M0/M1-1` instead of `1-M1/M0` (which
   fabricates P&L from volatility), and the window-end close was never charged.
+- **Sizing is now evidence-gated.** `wand.py edge` measures the strategy's
+  per-trade edge and prints the size it justifies. On the default strategy:
+  −114.5 bps mean, −165.4 bps conservative, 140 bps round trip → **0.00% of
+  equity**. A unit bug was caught doing this: `Trade.return_pct` is FRACTIONAL,
+  so bps is ×10,000 not ×100 — the wrong factor understated a −114 bps/trade
+  loser as −1.14 bps and would have argued FOR a position. `edge_from_trades`
+  now owns that conversion and two tests pin it.
 - **The 4×3 scan is the decisive one: 0/12 cells beat climatology.** `wand.py
   scan` (markets × horizons, triple label, chance-corrected): zero cells beat
   their Brier baseline where a coin flip would give ~6, zero at p<0.05 raw

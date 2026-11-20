@@ -623,6 +623,44 @@ def _binom_p(k: int, n: int, p0: float) -> float:
     return prob if z > 0 else 1.0 - prob
 
 
+def cmd_edge(cfg: Config, args) -> int:
+    """Measure the current strategy's edge, then ask what size it justifies."""
+    from .sizing import edge_from_trades, size_from_edge
+
+    cfg.market.symbol = args.symbol or cfg.market.symbol
+    bars = data_mod.fetch(args.exchange or cfg.market.exchange, cfg.market.symbol,
+                          args.timeframe or cfg.market.timeframe,
+                          args.candles or cfg.market.candles, seed=cfg.seed)
+    strat = build_strategy(cfg.strategy, seed=cfg.seed)
+    r = bt.run_backtest(bars, cfg, strat,
+                        bt.BacktestOptions(fee_mult=1.0, signal_delay=1,
+                                           seed=cfg.seed))
+    edge = edge_from_trades(r.trades, label=f"{strat.name} {cfg.market.symbol}")
+    # ONE instrument, two fills: fee+slippage on entry and on exit. (carry.py
+    # uses four legs because it holds two instruments.)
+    round_trip = 2 * (cfg.costs.fee_bps + cfg.costs.slippage_bps)
+    sizing = size_from_edge(edge, per_trade_cost_bps=round_trip)
+
+    print()
+    print(f"  EDGE — {strat.name} on {cfg.market.symbol} @ "
+          f"{cfg.market.timeframe}, {len(r.trades)} trades")
+    print("  " + "-" * 74)
+    print(f"  per-trade mean   {edge.mean_bps:+8.2f} bps")
+    print(f"  per-trade sd     {edge.sd_bps:8.2f} bps")
+    print(f"  standard error   {edge.se_bps:8.2f} bps   (n={edge.n})")
+    print(f"  conservative     {edge.lower_bound_bps():+8.2f} bps   "
+          f"(mean - 2 se)")
+    print(f"  round-trip cost  {round_trip:8.2f} bps")
+    print(f"  -> size          {sizing.fraction:8.2%} of equity")
+    print(f"  verdict          {sizing.reason}")
+    print()
+    if edge.n < 30:
+        print(f"  {edge.n} trades is too few to size on. This is a refusal, "
+              f"not a result.")
+        print()
+    return 0 if sizing.ok else 1
+
+
 def cmd_scan(cfg: Config, args) -> int:
     """Breadth, not cleverness: many markets x horizons, chance-corrected.
 
@@ -900,6 +938,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="fit a separate model per volatility regime and compare")
     fc.add_argument("--min-regime-train", type=int, default=60)
     fc.set_defaults(fn=cmd_forecast)
+
+    eg = sub.add_parser("edge",
+                        help="measure the strategy edge and the size it justifies")
+    eg.add_argument("--symbol", default="")
+    eg.add_argument("--exchange", default="")
+    eg.add_argument("--timeframe", default="")
+    eg.add_argument("--candles", type=int, default=0)
+    eg.set_defaults(fn=cmd_edge)
 
     sc = sub.add_parser("scan",
                         help="many markets x horizons, chance-corrected verdict")

@@ -255,11 +255,28 @@ class TestLevelsNotProjections(unittest.TestCase):
         self.assertNotEqual(plain.data, marked.data,
                             "an open position must change the picture")
 
-    def test_header_says_no_projection(self):
-        """The claim is on the image, so a human reading it is not misled."""
+    def test_header_says_what_the_marks_are(self):
+        """The claim is on the image, so a human reading it is not misled.
+
+        An operator looked at the chart, saw green horizontal dashes at old
+        swing lows, and reasonably read them as "buy signals that were then
+        disproved". Nothing on the image said otherwise.
+        """
         import inspect
         src = inspect.getsource(__import__("magicwand.vision", fromlist=["x"]).render_chart)
-        self.assertIn("NO projection", src)
+        self.assertIn("NOT signals", src)
+        self.assertIn("past pivots", src)
+        # The header must FIT: an earlier version ran off the right edge and
+        # became unreadable, which is worse than no legend at all.
+        for line in [ln for ln in src.splitlines() if "past pivots" in ln]:
+            self.assertLess(len(line), 200)
+
+    def test_level_marks_are_neutral_coloured(self):
+        """Red/green belong to candles. A level must not borrow their meaning."""
+        import inspect
+        src = inspect.getsource(__import__("magicwand.vision", fromlist=["x"]).render_chart)
+        self.assertIn("mark_colour", src)
+        self.assertNotIn('for side, colour, mark in (("resistance"', src)
 
     def test_chart_uses_only_the_bars_it_was_given(self):
         """No future data is invented: levels are indexed inside the window."""
@@ -270,3 +287,52 @@ class TestLevelsNotProjections(unittest.TestCase):
             for _price, idx in lv[side]:
                 self.assertGreaterEqual(idx, 0)
                 self.assertLess(idx, len(bars))
+
+
+class TestLevelClassification(unittest.TestCase):
+    """A level's label must follow where price is NOW, not what it used to be.
+
+    The chart used to call every swing high "resistance" and every swing low
+    "support". After a drop it drew green "S" dashes above the market — which
+    reads as a buy signal at the exact moment the level had already failed.
+    """
+
+    def test_levels_above_the_last_close_are_resistance(self):
+        from magicwand.vision import level_marks
+        bars = data_mod.synthetic_bars(240, seed=5)
+        marks = level_marks(bars)
+        last = bars[-1].close
+        self.assertTrue(marks, "no pivots were found at all")
+        for m in marks:
+            self.assertEqual(m["kind"] == "R", m["price"] > last,
+                             f"{m['kind']} at {m['price']:.2f} vs last {last:.2f}")
+
+    def test_a_broken_support_becomes_resistance(self):
+        """Price falls through an old low: that low is now overhead supply."""
+        from magicwand.vision import level_marks
+        bars = data_mod.synthetic_bars(200, seed=9)
+        crash = [type(bars[0])(ts=b.ts, open=bars[-1].close * 0.6,
+                               high=bars[-1].close * 0.61,
+                               low=bars[-1].close * 0.59,
+                               close=bars[-1].close * 0.6, volume=b.volume)
+                 for b in bars[-1:]]
+        marks = level_marks(bars + crash)
+        last = (bars + crash)[-1].close
+        self.assertTrue(all(m["price"] > last for m in marks),
+                        "levels under a crashed price were still labelled support")
+        self.assertTrue(all(m["kind"] == "R" for m in marks))
+
+    def test_marks_are_bounded_and_inside_the_window(self):
+        from magicwand.vision import level_marks
+        bars = data_mod.synthetic_bars(300, seed=3)
+        marks = level_marks(bars, max_levels=3)
+        self.assertLessEqual(sum(1 for m in marks if m["kind"] == "R"), 3)
+        self.assertLessEqual(sum(1 for m in marks if m["kind"] == "S"), 3)
+        for m in marks:
+            self.assertGreaterEqual(m["idx"], 0)
+            self.assertLess(m["idx"], len(bars))
+
+    def test_level_marks_need_no_image_library(self):
+        """Classification is arithmetic; only drawing needs PIL."""
+        from magicwand.vision import level_marks
+        self.assertEqual(level_marks([]), [])

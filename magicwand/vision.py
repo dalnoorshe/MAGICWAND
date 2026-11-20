@@ -124,6 +124,47 @@ def find_levels(bars: list[Bar], k: int = 3, max_levels: int = 3,
     return {"resistance": thin(highs), "support": sorted(thin(lows))}
 
 
+def level_marks(bars: list[Bar], last_close: Optional[float] = None,
+                k: int = 3, max_levels: int = 3,
+                tolerance: float = 0.004) -> list[dict]:
+    """Pivots already printed in this window, labelled by where price is NOW.
+
+    The old chart labelled a swing HIGH "resistance" and a swing LOW "support"
+    regardless of the current price, so after a drop it drew green "support"
+    lines ABOVE the market — which reads as "buy here" at exactly the moment the
+    level had already failed. Support that price has broken is resistance; the
+    label has to follow the fact, not the pivot's original type.
+
+    Returns [{"price", "idx", "kind"}] with kind "R" above the last close and
+    "S" below it. Nothing here is a projection: an entry is a bar whose high
+    beat its neighbours (or whose low undercut theirs) inside the window.
+    """
+    if not bars:
+        return []
+    last_close = bars[-1].close if last_close is None else last_close
+    pivots: list[tuple[float, int]] = []
+    n = len(bars)
+    for i in range(k, n - k):
+        window = bars[i - k: i + k + 1]
+        if bars[i].high >= max(b.high for b in window):
+            pivots.append((bars[i].high, i))
+        if bars[i].low <= min(b.low for b in window):
+            pivots.append((bars[i].low, i))
+
+    def thin(points: list[tuple[float, int]]) -> list[tuple[float, int]]:
+        out: list[tuple[float, int]] = []
+        for price, idx in sorted(points, reverse=True):
+            if all(abs(price - p) / max(p, 1e-9) > tolerance for p, _ in out):
+                out.append((price, idx))
+        return out[:max_levels]
+
+    above = thin([p for p in pivots if p[0] > last_close])
+    below = thin([p for p in pivots if p[0] < last_close])
+    marks = [{"price": pr, "idx": ix, "kind": "R"} for pr, ix in above]
+    marks += [{"price": pr, "idx": ix, "kind": "S"} for pr, ix in below]
+    return marks
+
+
 def render_chart(bars: list[Bar], title: str = "SOL-USD 1h",
                  width: int = 1280, height: int = 720,
                  max_bars: int = 120, ma_fast: int = 12,
@@ -210,27 +251,34 @@ def render_chart(bars: list[Bar], title: str = "SOL-USD 1h",
             bot = top + 1
         d.rectangle([cx - w / 2, top, cx + w / 2, bot], fill=colour)
 
-    # ---- observed levels: drawn only where price actually turned ----
+    # ---- observed levels: pivots that already happened, labelled by side ----
+    # Amber, not red/green: the candle palette means bull/bear, and a green
+    # horizontal line at a swing low reads as "buy" to anyone who is not holding
+    # the source in their head. These are reference marks, not signals, so they
+    # get a colour that appears nowhere in the direction vocabulary.
     if levels:
-        lv = find_levels(bars)
+        mark_colour = (238, 196, 108)
         used_label_y: list[float] = []
-        for side, colour, mark in (("resistance", (255, 93, 108), "R"),
-                                   ("support", (53, 208, 127), "S")):
-            for price, idx in lv[side]:
-                y = y_of(price)
-                if not (pad_t < y < pad_t + price_h):
-                    continue
-                x0 = max(pad_l, x_of(idx) - 2 * step)
-                x1 = min(width - pad_r, x_of(idx) + 8 * step)
-                d.line([(x0, y), (x1, y)], fill=colour, width=1)
-                # label to the right of the dash, nudged if it would overlap
-                ly = y - 7
-                while any(abs(ly - u) < 13 for u in used_label_y):
-                    ly += 13
-                if pad_t < ly < pad_t + price_h - 10:
-                    d.text((min(x1 + 6, width - pad_r - 64), ly),
-                           f"{mark} {price:,.2f}", fill=colour, font=font_small)
-                    used_label_y.append(ly)
+        for mk in level_marks(bars):
+            price, idx, kind = mk["price"], mk["idx"], mk["kind"]
+            y = y_of(price)
+            if not (pad_t < y < pad_t + price_h):
+                continue
+            # A short dash centred on the pivot: no 8-bar tail reaching forward,
+            # which was the other thing that made these look like projections.
+            x0 = max(pad_l, x_of(idx) - 2 * step)
+            x1 = min(width - pad_r, x_of(idx) + 2 * step)
+            x = x0
+            while x < x1:                      # dotted, so clearly annotation
+                d.line([(x, y), (min(x + 3, x1), y)], fill=mark_colour, width=1)
+                x += 6
+            ly = y - 7
+            while any(abs(ly - u) < 13 for u in used_label_y):
+                ly += 13
+            if pad_t < ly < pad_t + price_h - 10:
+                d.text((min(x1 + 6, width - pad_r - 64), ly),
+                       f"{kind} {price:,.2f}", fill=mark_colour, font=font_small)
+                used_label_y.append(ly)
 
     # last traded price: a dotted reference, not a forecast
     y_last = y_of(bars[-1].close)
@@ -273,7 +321,7 @@ def render_chart(bars: list[Bar], title: str = "SOL-USD 1h",
     d.text((pad_l, 34),
            f"{bars[0].ts:%Y-%m-%d %H:%M} → {last.ts:%Y-%m-%d %H:%M} UTC  ·  "
            f"{n} candles  ·  MA{ma_fast} blue  ·  MA{ma_slow} purple  ·  "
-           f"R/S observed levels  ·  NO projection",
+           f"amber R/S = past pivots, NOT signals",
            fill=dim, font=font_small)
 
     buf = io.BytesIO()

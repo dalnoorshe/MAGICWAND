@@ -204,3 +204,32 @@ class TestFundingPaging(unittest.TestCase):
             research_mod._get_json = saved
         self.assertLessEqual(len(calls), 2, "the pager did not stop on a stuck page")
         self.assertEqual(len(out), 1)
+
+
+class TestBarLengths(unittest.TestCase):
+    """Coinbase's granularity whitelist is not the list of bar lengths.
+
+    Binance serves 4h bars; Coinbase does not. Using one map for both jobs made
+    `wand.py forecast --timeframe 4h` die with a KeyError — a crash, not a wrong
+    number, but it only surfaced because the experiment was actually run.
+    """
+
+    def test_four_hour_bars_have_a_length(self):
+        from magicwand import data as data_mod
+        self.assertEqual(data_mod._bar_seconds("4h"), 14400)
+        self.assertEqual(data_mod.timeframe_seconds("4h"), 14400)
+
+    def test_unknown_timeframes_raise_instead_of_assuming_an_hour(self):
+        from magicwand import data as data_mod
+        with self.assertRaises(data_mod.FeedError):
+            data_mod._bar_seconds("7h")
+
+    def test_every_supported_binance_interval_has_a_length(self):
+        from magicwand import data as data_mod
+        for tf in data_mod._BINANCE_INTERVAL:
+            self.assertGreater(data_mod._bar_seconds(tf), 0, tf)
+
+    def test_coinbase_granularity_still_rejects_4h(self):
+        """The Coinbase whitelist must not grow just because Binance is happy."""
+        from magicwand import data as data_mod
+        self.assertNotIn("4h", data_mod._GRANULARITY)

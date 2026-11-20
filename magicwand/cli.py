@@ -467,10 +467,10 @@ def _forecast_sweep(cfg: Config, args, bars, symbol: str) -> int:
         if groups:
             print(f"  loading context for {groups} …", flush=True)
             ctx_cache[groups] = feat_mod.build_context(
-                symbol, cfg.market.timeframe, bars, groups)
+                symbol, args.timeframe or cfg.market.timeframe, bars, groups)
 
     print()
-    print(f"  FEATURE / LABEL SWEEP — {symbol} @ {cfg.market.timeframe}, "
+    print(f"  FEATURE / LABEL SWEEP — {symbol} @ {args.timeframe or cfg.market.timeframe}, "
           f"{len(bars)} bars, horizon {args.horizon}")
     print("  " + "-" * 84)
     print(f"  {'label':10s} {'features':22s} {'n':>5s} {'acc':>7s} "
@@ -510,7 +510,8 @@ def cmd_forecast(cfg: Config, args) -> int:
     """Train a trend model walk-forward and report whether it beats the base rate."""
     symbol = args.symbol or cfg.market.symbol
     exchange = args.exchange or cfg.market.exchange
-    bars = data_mod.fetch(exchange, symbol, cfg.market.timeframe,
+    timeframe = getattr(args, "timeframe", "") or cfg.market.timeframe
+    bars = data_mod.fetch(exchange, symbol, timeframe,
                           max(args.candles, 400), seed=cfg.seed)
     groups = tuple(g.strip() for g in getattr(args, "groups", "").split(",")
                    if g.strip())
@@ -523,7 +524,7 @@ def cmd_forecast(cfg: Config, args) -> int:
     if groups:
         from . import features as feat_mod
         print(f"  loading context for {groups} …", flush=True)
-        ctx = feat_mod.build_context(symbol, cfg.market.timeframe, bars, groups)
+        ctx = feat_mod.build_context(symbol, timeframe, bars, groups)
 
     if getattr(args, "sweep", False):
         return _forecast_sweep(cfg, args, bars, symbol)
@@ -534,7 +535,7 @@ def cmd_forecast(cfg: Config, args) -> int:
         label=args.label, groups=groups, ctx=ctx,
         barrier_atr=args.barrier_atr, stats=stats)
     print()
-    print(f"  TREND FORECAST — {symbol} @ {cfg.market.timeframe}, "
+    print(f"  TREND FORECAST — {symbol} @ {timeframe}, "
           f"horizon {args.horizon} bars")
     print("  " + "-" * 74)
     if ev is None:
@@ -724,6 +725,8 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--symbol")
     fc.add_argument("--exchange", choices=["coinbase", "binance", "kraken"],
                     help="candle source (binance has the deepest history)")
+    fc.add_argument("--timeframe", default="",
+                    help="bar size: 1h (default from config), 4h, 6h, 1d")
     fc.add_argument("--candles", type=int, default=3000)
     fc.add_argument("--horizon", type=int, default=6)
     fc.add_argument("--min-train", type=int, default=200)

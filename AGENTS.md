@@ -11,7 +11,7 @@ these lessons were expensive.
 ```bash
 python3 wand.py audit                     # both angles, ~4s
 python3 wand.py audit --angle durability  # state / restarts / accounting only
-python3 -m unittest discover -s tests -v  # 479 tests
+python3 -m unittest discover -s tests -v  # 483 tests
 ```
 
 When a panel says a source is unavailable, run `python3 wand.py sources` before
@@ -130,7 +130,7 @@ These were each learned by breaking them. Do not "improve" them away.
 
 ## State of play (as of the last session)
 
-- 479 tests, 0 audit gaps, 23 audit passes.
+- 483 tests, 0 audit gaps, 23 audit passes.
 - The validation gate has approved **0** strategies: at ~1.2% round-trip costs
   nothing has survived yet. That is the honest blocker, not a bug.
 - At $50 equity the desk can place **no** trade: $0.50 per trade against a $5
@@ -198,10 +198,18 @@ These were each learned by breaking them. Do not "improve" them away.
   nothing. A feature that quietly covers a fifth of the data looks exactly like a
   feature that does not work — and it produced a wrong conclusion that had to be
   retracted. It now walks a `startTime`/`endTime` window (2,400 records, 2.2y).
+- **Timeframe and horizon do not rescue it either.** 1h/h24 (0.2557 vs 0.2494),
+  4h/h6 (0.2517 vs 0.2500), 1d/h6 (0.2597 vs 0.2484): all below climatology on
+  Brier AND below their own base-rate accuracy. Also fixed a KeyError:
+  `binance_candles` used Coinbase's granularity map for bar length and that map
+  has no 4h. Now `_BAR_SECONDS` (all venues) vs `_GRANULARITY` (Coinbase
+  whitelist only).
 - `docs/EXPERIMENTS.md` is where falsified ideas go, with their numbers, so
   nobody re-runs them. Closed: regime training, LLM forecasting, better
-  features, better labels, more history. Open: higher timeframes, longer
-  horizons, a different market, calibration.
+  features, better labels, more history, timeframe/horizon. The remaining
+  direction is a different KIND of question — structural rather than predictive
+  (funding carry/basis, liquidation cascades), or a different market, or
+  calibration as a post-process.
 - Backtests are linear again. `decide` gets a growing prefix each bar to make
   lookahead impossible, and every indicator series was being rebuilt per prefix
   (O(n²)): 300 bars took 1s, 4,000 took 45s. The series are trailing-window

@@ -29,7 +29,14 @@ KRAKEN = "https://api.kraken.com/0/public"
 _UA = {"User-Agent": "magicwand/0.1 (+paper-trading research)"}
 
 # Coinbase granularity is in seconds.
+# Coinbase's granularity parameter accepts only this set, so this map is ALSO
+# its argument whitelist. Bar length in seconds is a separate question: Binance
+# happily serves 4h bars, which Coinbase does not, and using this map for both
+# jobs crashed the 4h forecast with a KeyError.
 _GRANULARITY = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "1d": 86400}
+_BAR_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600,
+                "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+                "1d": 86400}
 _KRAKEN_INTERVAL = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "6h": 360, "1d": 1440}
 # Kraken renames some pairs; BTC/ETH are the classic ones.
 _KRAKEN_ALIASES = {"BTC": "XBT"}
@@ -157,7 +164,7 @@ def binance_candles(symbol: str, timeframe: str = "1h",
     bars = [out[k] for k in sorted(out)]
     if len(bars) < 5:
         raise FeedError(f"Binance returned {len(bars)} candles for {pair}")
-    _drop_forming_bar(bars, _GRANULARITY[timeframe])
+    _drop_forming_bar(bars, _bar_seconds(timeframe))
     return bars[-candles:]
 
 
@@ -197,7 +204,7 @@ def kraken_candles(symbol: str = "XBTUSD", timeframe: str = "1h",
                             low=float(row[3]), close=float(row[4]), volume=float(row[6])))
         except ValueError:
             continue
-    _drop_forming_bar(bars, _GRANULARITY[timeframe])
+    _drop_forming_bar(bars, _bar_seconds(timeframe))
     return bars
 
 
@@ -284,8 +291,17 @@ def fetch(exchange: str, symbol: str, timeframe: str = "1h",
     return bars
 
 
+def _bar_seconds(timeframe: str) -> int:
+    """Bar length in seconds. Never defaults silently — an unknown timeframe is
+    a bug in the caller, not something to paper over with an hour."""
+    seconds = _BAR_SECONDS.get(timeframe)
+    if seconds is None:
+        raise FeedError(f"unsupported timeframe {timeframe!r}")
+    return seconds
+
+
 def timeframe_seconds(timeframe: str) -> int:
-    return _GRANULARITY.get(timeframe, 3600)
+    return _BAR_SECONDS.get(timeframe, 3600)
 
 
 def age_seconds(bars: list[Bar], now=None) -> float:

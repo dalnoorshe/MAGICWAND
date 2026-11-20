@@ -286,3 +286,12 @@
 [autopilot 19:19:08] tick 8: graded 2 agent claim(s) | research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by onchain | strategy 'sol_fear_grind_slow_revert' rejec
 [autopilot 19:34:37] tick 9: graded 4 agent claim(s) | research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by onchain; single-source veto declined from derivatives
 [autopilot 19:50:09] tick 10: graded 3 agent claim(s) | research: 5/5 readers reported; evidence -0.07; coverage 93% of sources | strategy 'sol_wide_channel_breakout_fear' rejected: REJECTED
+[autopilot 20:05:45] tick 11: graded 3 agent claim(s) | research: 5/5 readers reported; evidence -0.19; coverage 94% of sources; VETO by onchain; single-source veto declined from derivatives
+[autopilot 20:21:26] tick 12: graded 4 agent claim(s) | research: 5/5 readers reported; evidence -0.16; coverage 93% of sources; VETO by onchain | strategy 'sol_fear_capitulation_quick_rever
+[autopilot 20:37:07] tick 13: graded 4 agent claim(s) | research: 5/5 readers reported; evidence -0.24; coverage 95% of sources; VETO by onchain; single-source veto declined from derivatives
+[autopilot 20:52:41] tick 14: research: 5/5 readers reported; evidence -0.25; coverage 94% of sources; VETO by onchain; single-source veto declined from derivatives | strategy 'sol_fear_crow
+[autopilot 21:08:11] tick 15: research: 5/5 readers reported; evidence -0.25; coverage 94% of sources; VETO by onchain; single-source veto declined from derivatives | strategy 'sol_panic_dip
+[autopilot 21:23:48] tick 16: research: 5/5 readers reported; evidence -0.31; coverage 94% of sources; VETO by news, onchain; single-source veto declined from derivatives | strategy 'sol_cro
+[autopilot 21:39:17] tick 17: research: 5/5 readers reported; evidence -0.33; coverage 94% of sources; VETO by news, onchain; single-source veto declined from derivatives | idea 'sol_whale_s
+[autopilot 17:00:12] autopilot started
+[autopilot 17:01:25] tick 1: research: 5/5 readers reported; evidence -0.48; coverage 95% of sources; VETO by derivatives, news; single-source veto declined from onchain, charts | strategy 

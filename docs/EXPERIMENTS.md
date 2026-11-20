@@ -177,3 +177,38 @@ enough to learn from if there were something to learn. What is left is not more
 data and not more columns: it is a different question — a different timeframe
 (4h/1d), a longer horizon (24 bars), or a different market. Testing another
 feature on another two years would be the same experiment with a new noun.
+
+---
+
+## 6. Different timeframe and horizon — **NEGATIVE** (branch closed)
+
+**Question.** The last untested lever: the 6-bar horizon on 1h bars may be the
+wrong question. A day, or a week, or a coarser bar, might have signal that an
+hourly close does not.
+
+**Method.** `wand.py forecast --timeframe … --horizon …`, price features only,
+walk-forward with purge intact:
+
+| timeframe | horizon | n | acc | base | Brier | climatology |
+|---|---|---|---|---|---|---|
+| 1h | 24 bars (1 day) | 9,315 | 49.7% | 52.5% | 0.2557 | 0.2494 |
+| 4h | 6 bars (1 day) | 5,333 | 47.9% | 50.6% | 0.2517 | 0.2500 |
+| 1d | 6 bars (6 days) | 833 | 52.2% | 54.0% | 0.2597 | 0.2484 |
+
+**Result.** All three below climatology on Brier, and all three *below their own
+base-rate accuracy*. Coarser bars and longer horizons do not reveal the signal;
+if anything the 4h series (which gets more information per bar for the same wall
+time) is the worst of the three.
+
+**A crash found on the way.** `--timeframe 4h` died with a KeyError:
+`binance_candles` used Coinbase's granularity map to compute bar length, and that
+map has no 4h because Coinbase does not serve it. Split into `_BAR_SECONDS` (bar
+length, all venues) and `_GRANULARITY` (Coinbase's argument whitelist). The
+silent version of this bug would have been worse: an unknown timeframe quietly
+defaulting to one hour would have mislabelled every bar.
+
+**Conclusion.** Six branches closed on the same question. 1h/4h/1d price action
+on SOL does not predict its own next day, and the honest conclusion is that this
+edge is not in this data at this resolution. What remains is a different KIND of
+question — structural rather than predictive (funding carry / basis, liquidation
+cascades) — or a different market.
